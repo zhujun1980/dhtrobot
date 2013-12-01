@@ -77,8 +77,7 @@ func (node *Node) Save() {
 	bufHeader.Write(node.Routing.ownNode.Info.ID)
 	binary.Write(bufHeader, binary.LittleEndian, uint32(buf.Len()))
 	bufHeader.Write(buf.Bytes())
-	p := GetPersist()
-	p.UpdateNodeInfo(node.Info.ID, bufHeader.Bytes())
+	GetPersist().UpdateNodeInfo(node.Info.ID, bufHeader.Bytes())
 }
 
 func (node *Node) Run() {
@@ -164,6 +163,7 @@ func (node *Node) SearchNodes(target *NodeInfo) chan int {
 		sr.out = make(chan int)
 		sr.in = make(chan int)
 		node.search(sr)
+		node.Routing.Print()
 		node.Save()
 	}(sr)
 	return sr.out
@@ -190,57 +190,69 @@ func (node *Node) search(sr *Searching) {
 		}
 	}
 
+	var reqs []*Request
 	for _, v := range closestNodes {
-		go func(v *NodeInfo) {
-			node.sendFindNode(sr, v)
-		}(v)
+		r := node.sendFindNode(sr, v)
+		if r != nil {
+			reqs = append(reqs, r)
+		}
 	}
 
-	data := make([]byte, 500)
-	for i := 0; i < len(closestNodes); i++ {
-		node.nw.Conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		nread, raddr, err := node.nw.Conn.ReadFromUDP(data)
-		if err != nil {
-			node.Log.Printf("Read error, iter %d, %s", i, err)
-		} else {
-			node.Log.Printf("Read success, iter %d, %d bytes, %s", i, nread, raddr)
-			rets := node.krpc.DecodeFindNodes(string(data))
-			node.Log.Printf("%d nodes received", len(rets))
-			for _, v1 := range rets {
-				node.Log.Printf("Find new node %s", v1)
-				if v1.ID.HexString() == node.Info.ID.HexString() {
-					continue
+	var ch chan string
+	if len(reqs) > 0 {
+		ch = node.nw.broker.WaitResponse(reqs, time.Second * 10)
+		for i := 0; i < len(reqs); i++ {
+			tid := <- ch
+			if tid != "" {
+				for _, req := range reqs {
+					if req.Tid != tid {
+						continue
+					}
+					res := req.Response.Addion.(*Response)
+					nodes := []byte(res.R["nodes"].(string))
+					rets := ParseBytesStream(nodes)
+					node.Log.Printf("%d nodes received", len(rets))
+					for _, v1 := range rets {
+						node.Log.Printf("Find new node %s", v1)
+						if v1.ID.HexString() == node.Info.ID.HexString() {
+							continue
+						}
+						node.Routing.InsertNode(v1)
+						sr.InsertNewNode(v1)
+					}
 				}
-				node.Routing.InsertNode(v1)
-				sr.InsertNewNode(v1)
 			}
 		}
 	}
 
 	sr.iterNum++
 	if sr.IsCloseEnough() {
-		node.Log.Printf("Finish searching, i=%d", sr.iterNum)
+		node.Log.Printf("Finish searching, i = %d", sr.iterNum)
 		return
 	}
 	node.search(sr)
 }
 
-func (node *Node) sendFindNode(sr *Searching, sn *NodeInfo) uint32 {
+func (node *Node) sendFindNode(sr *Searching, sn *NodeInfo) *Request {
 	raddr := &net.UDPAddr{sn.IP, sn.Port, ""}
-	tid, data, err := node.krpc.FindNode(&sr.target)
+	tid, data, err := node.krpc.EncodingFindNode(&sr.target)
 	if err != nil {
 		node.Log.Panic(err)
-		return 0
+		return nil
 	}
+
+	r := NewRequest(tid, node)
+	node.nw.broker.AddRequest(r) //Add request before send it
+
 	sr.visited[sn.ID.HexString()] = true
-	node.Log.Printf("Find node on %d-%s", tid, sn)
+	node.Log.Printf("Find node on #%x-%s", tid, sn)
 	nwrite, err := node.nw.Conn.WriteToUDP([]byte(data), raddr)
 	if err != nil {
 		node.Log.Panicln(err)
 	} else {
 		node.Log.Printf("Write %d bytes success", nwrite)
 	}
-	return tid
+	return r
 }
 
 func (node *Node) GetPeers(infohash *string) {

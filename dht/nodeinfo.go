@@ -73,7 +73,6 @@ type NodeInfo struct {
 
 func (ni *NodeInfo) String() string {
 	s := fmt.Sprintf("[%s [%s]:%d %d]", ni.ID.HexString(), ni.IP, ni.Port, ni.Status)
-	ni.Status = 2
 	return s
 }
 

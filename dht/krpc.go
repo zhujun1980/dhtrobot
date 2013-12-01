@@ -5,6 +5,7 @@ import (
 	"github.com/zeebo/bencode"
 	"math"
 	"sync/atomic"
+	"bytes"
 )
 
 type Action func(ctx interface{}, message *KRPCMessage)
@@ -45,18 +46,60 @@ type Query struct {
 	A map[string]interface{}
 }
 
+func (q *Query) String() string {
+	buf := bytes.NewBufferString("[")
+	buf.WriteString(q.Y)
+	buf.WriteString("]")
+	return buf.String()
+}
+
 type Response struct {
 	R map[string]interface{}
+}
+
+func (r *Response) String() string {
+	buf := bytes.NewBufferString("[")
+	buf.WriteString("]")
+	return buf.String()
 }
 
 type Err struct {
 	E []interface{}
 }
 
+func (e *Err) String() string {
+	buf := bytes.NewBufferString("[")
+	buf.WriteString(fmt.Sprintf("%v", e))
+	buf.WriteString("]")
+	return buf.String()
+}
+
 type KRPCMessage struct {
 	T      string
 	Y      string
 	Addion interface{}
+}
+
+func (m *KRPCMessage) String() string {
+	buf := bytes.NewBufferString("{")
+	buf.WriteString(fmt.Sprintf("#%s %s ", m.T, m.Y))
+	switch (m.Y) {
+	case "q":
+		q := m.Addion.(*Query)
+		buf.WriteString(q.String())
+		break
+	case "r":
+		r := m.Addion.(*Response)
+		buf.WriteString(r.String())
+		break
+	case "e":
+		e := m.Addion.(*Err)
+		buf.WriteString(e.String())
+		break
+	}
+
+	buf.WriteString("}")
+	return buf.String()
 }
 
 func (encode *KRPC) GenTID() uint32 {
@@ -129,7 +172,7 @@ func (encode *KRPC) Decode(message string) (*KRPCMessage, error) {
 	}
 }
 
-func (encode *KRPC) FindNode(target *NodeInfo) (uint32, string, error) {
+func (encode *KRPC) EncodingFindNode(target *NodeInfo) (uint32, string, error) {
 	tid := encode.GenTID()
 	v := make(map[string]interface{})
 	v["t"] = fmt.Sprintf("%x", tid)

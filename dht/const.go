@@ -12,7 +12,7 @@ const (
 	TRANSMISSIONBT = "dht.transmissionbt.com:6881"
 )
 
-const MAXSIZE = 300
+const MAXSIZE = 500
 
 const (
 	GOOD = 1

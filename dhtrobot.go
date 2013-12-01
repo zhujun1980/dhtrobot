@@ -40,6 +40,7 @@ func main() {
 			}()
 		}
 	}
+
 	ch := make(chan bool)
 	<-ch
 }
