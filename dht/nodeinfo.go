@@ -107,7 +107,7 @@ func (nis *NodeInfos) Print() {
 func NodesInfosToString(nodes []*NodeInfo) string {
 	buf := bytes.NewBufferString("{")
 	for _, v := range nodes {
-		buf.WriteString(v.ID.HexString())
+		buf.WriteString(v.String())
 		buf.WriteString(",")
 	}
 	buf.WriteString("}")

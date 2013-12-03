@@ -12,10 +12,10 @@ type Network struct {
 	broker  *Broker
 }
 
-func NewNetwork(own *Node) *Network {
+func NewNetwork(ownNode *Node) *Network {
 	nw := new(Network)
-	nw.broker = NewBroker()
-	nw.ownNode = own
+	nw.broker = NewBroker(ownNode)
+	nw.ownNode = ownNode
 	nw.Init()
 	nw.StartListening()
 	return nw
@@ -30,7 +30,7 @@ func (nw *Network) Init() {
 	laddr := nw.Conn.LocalAddr().(*net.UDPAddr)
 	nw.ownNode.Info.Port = laddr.Port
 	nw.ownNode.Info.IP = laddr.IP
-	//nw.ownNode.Log.Printf("Start listening: %s", laddr)
+	nw.ownNode.Log.Printf("Start listening: %s", laddr)
 
 	nw.broker.Run()
 }
@@ -51,7 +51,7 @@ func (nw *Network) StartListening() {
 				continue
 			}
 			nw.ownNode.Log.Printf("Read success, %d bytes, from %s", nread, raddr)
-			msg, err := nw.ownNode.krpc.Decode(string(data))
+			msg, err := nw.ownNode.krpc.Decode(string(data), raddr)
 			if err != nil {
 				nw.ownNode.Log.Printf("Decoding error, %s", err)
 			} else {
@@ -61,30 +61,44 @@ func (nw *Network) StartListening() {
 	}()
 }
 
+func (nw *Network) Send(m []byte, raddr *net.UDPAddr) error {
+	nwrite, err := nw.Conn.WriteToUDP(m, raddr)
+	if err != nil {
+		nw.ownNode.Log.Printf("Send error %s", err)
+	} else {
+		nw.ownNode.Log.Printf("Send %d bytes success", nwrite)
+	}
+	return err
+}
+
 type Request struct {
 	Tid      string
 	Node     *Node
+	SN       *NodeInfo
 	Response *KRPCMessage
 	ch       chan string
 }
 
-func NewRequest(tid uint32, node *Node) *Request {
+func NewRequest(tid uint32, node *Node, searchNode *NodeInfo) *Request {
 	r := new(Request)
-	r.ch = make(chan string, 1)
+	r.ch = make(chan string, 1) //Must be buffered chan
 	r.Node = node
+	r.SN = searchNode
 	r.Response = nil
 	r.Tid = fmt.Sprintf("%x", tid)
 	return r
 }
 
 type Broker struct {
-	ch   chan *Request
-	chl  chan *KRPCMessage
-	reqs map[string]*Request
+	ownNode *Node
+	ch      chan *Request
+	chl     chan *KRPCMessage
+	reqs    map[string]*Request
 }
 
-func NewBroker() *Broker {
+func NewBroker(ownNode *Node) *Broker {
 	b := new(Broker)
+	b.ownNode = ownNode
 	b.reqs = make(map[string]*Request)
 	b.ch = make(chan *Request)
 	b.chl = make(chan *KRPCMessage)
@@ -94,38 +108,34 @@ func NewBroker() *Broker {
 func (b *Broker) Run() {
 	go func() {
 		for {
-			fmt.Println("broker start")
+			b.ownNode.Log.Printf("Broker listening")
 			select {
 			case r := <-b.ch:
-				fmt.Println("broker r0")
+				b.ownNode.Log.Printf("Broker recv request #%s", r.Tid)
 				b.reqs[r.Tid] = r
-				fmt.Println("broker r1")
 			case m := <-b.chl:
-				fmt.Println("broker r2", m.T)
-				fmt.Println(m.String())
 				if req, ok := b.reqs[m.T]; ok {
-					fmt.Println(1)
+					b.ownNode.Log.Printf("Broker recv response #%s", m.T)
 					req.Response = m
-					fmt.Println(2)
 					req.ch <- m.T
-					fmt.Println("broker r3")
+					b.ownNode.Log.Printf("Broker dispatchs over")
 					delete(b.reqs, m.T)
 				} else {
-					fmt.Println(3)
-					fmt.Println("broker r4", m.String())
+					b.ownNode.Log.Printf("Broker recv query #%s", m.T)
+					b.ownNode.NewMsg <- m
 				}
 			case <-time.After(5 * time.Second):
 				//gc
-				fmt.Println("broker timeout")
+				b.ownNode.Log.Printf("Broker timeout")
 			}
 		}
 	}()
 }
 
 func (b *Broker) AddRequest(r *Request) {
-	fmt.Println("add Response start")
+	b.ownNode.Log.Printf("Add request #%s start", r.Tid)
 	b.ch <- r
-	fmt.Println("add Response end")
+	b.ownNode.Log.Printf("Add request #%s end", r.Tid)
 }
 
 func (b *Broker) WaitResponse(rs []*Request, t time.Duration) chan string {
@@ -137,7 +147,7 @@ func (b *Broker) WaitResponse(rs []*Request, t time.Duration) chan string {
 			select {
 			case s := <-r.ch:
 				ch <- s
-				r.Node.Log.Printf("Response #%s", r.Tid)
+				r.Node.Log.Printf("Response #%s return", r.Tid)
 				return
 			case <-time.After(t):
 				r.Node.Log.Printf("Wait timeout #%s", r.Tid)
@@ -150,7 +160,7 @@ func (b *Broker) WaitResponse(rs []*Request, t time.Duration) chan string {
 }
 
 func (b *Broker) PublishNewMessage(m *KRPCMessage) {
-	fmt.Println("publish start")
+	b.ownNode.Log.Printf("Message publish #%s start", m.T)
 	b.chl <- m
-	fmt.Println("publish end")
+	b.ownNode.Log.Printf("Message publish #%s end", m.T)
 }

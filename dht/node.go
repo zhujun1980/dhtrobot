@@ -19,21 +19,24 @@ type Node struct {
 	nw      *Network
 	Log     *log.Logger
 	Status  int
+	NewMsg  chan *KRPCMessage
 }
 
 func NewNode(logger io.Writer) *Node {
 	n := new(Node)
+	n.Log = log.New(logger, "N ", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
+	n.NewMsg = make(chan *KRPCMessage)
 	n.Info.ID = GenerateID()
 	n.Routing = NewRouting(n)
 	n.krpc = NewKRPC(n)
 	n.nw = NewNetwork(n)
 	n.Status = NEW
-	n.Log = log.New(logger, "N ", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
 	return n
 }
 
 func LoadNode(reader io.Reader, logger io.Writer) (*Node, error) {
 	n := NewNode(logger)
+	n.Status = SENIOR
 
 	buf := bufio.NewReader(reader)
 	var data []byte = make([]byte, 24)
@@ -82,14 +85,88 @@ func (node *Node) Save() {
 
 func (node *Node) Run() {
 	node.Log.Printf("Current Node %s", &(node.Info))
+
+	go func() { node.StartListener() }()
+	go func() { node.StartNodeChecker() }()
+}
+
+func (node *Node) StartListener() {
 	for {
-		switch node.Status {
-		case NEW:
-			ch := node.SearchNodes(&node.Info)
-			<-ch
+		select {
+		case m := <-node.NewMsg:
+			if m.Y == "q" {
+				node.ProcessQuery(m)
+			}
+		}
+	}
+}
+
+func (node *Node) ProcessQuery(m *KRPCMessage) {
+	if q, ok := m.Addion.(*Query); ok {
+		switch q.Y {
+		case "ping":
+			node.Log.Printf("Recv PING %s", m.String())
+			data, _ := node.krpc.EncodeingPong(m.T)
+			node.nw.Send([]byte(data), m.Addr)
 			break
-		default:
+		case "find_node":
+			node.Log.Printf("Recv FIND_NODE %s", m.String())
+			if target, ok := q.A["target"].(string); ok {
+				targetNode := &NodeInfo{nil, 0, Identifier(target), 0}
+				closestNodes := node.Routing.FindNode(targetNode, K)
+				nodes := ConvertByteStream(closestNodes)
+				data, _ := node.krpc.EncodingNodeResult(m.T, nodes)
+				node.nw.Send([]byte(data), m.Addr)
+			}
 			break
+		case "get_peers":
+			node.Log.Printf("Recv GET_PEERS %s", m.String())
+			break
+		case "announce_peer":
+			node.Log.Printf("Recv ANNOUNCE_PEER %s", m.String())
+			break
+		}
+
+		queryNode := new(NodeInfo)
+		queryNode.IP = m.Addr.IP
+		queryNode.Port = m.Addr.Port
+		queryNode.Status = GOOD
+		queryNode.ID = Identifier(q.A["id"].(string))
+		node.Routing.InsertNode(queryNode)
+	}
+}
+
+func (node *Node) StartNodeChecker() {
+	if node.Status == NEW {
+		node.SearchNodes(&node.Info)
+	} else {
+		node.RefreshBucket(true)
+	}
+	node.Save()
+
+	for {
+		select {
+		case <-time.After(10 * time.Second):
+			node.RefreshBucket(false)
+			node.Save()
+		}
+	}
+}
+
+func (node *Node) RefreshBucket(force bool) {
+	i := 1
+	for k, v := range node.Routing.table {
+		if force || v.LastUpdate.Add(EXPIRE_DURATION).Before(time.Now()) {
+			if v.Nodes.Len() == 0 {
+				continue
+			}
+			node.Log.Printf("Bucket expired, #%d k=%d [%s][%s]",
+				i, k, v.LastUpdate, time.Now())
+			ni := v.Nodes.Front().Value.(*NodeInfo)
+			go func(v *NodeInfo) {
+				node.SearchNodes(v)
+			}(ni)
+			i++
 		}
 	}
 }
@@ -103,8 +180,6 @@ type Searching struct {
 	iterNum int
 	retNum  int
 	d       string
-	out     chan int
-	in      chan int
 }
 
 func (sr *Searching) Closest() []*NodeInfo {
@@ -142,37 +217,31 @@ func (sr *Searching) IsCloseEnough() bool {
 	newd := fmt.Sprintf("%x", Distance(sr.ownNode.Info.ID, cl.ID))
 	b := false
 	if sr.d != "" {
-		b = (newd >= sr.d) && (sr.iterNum > 10)
+		b = (newd >= sr.d) && (sr.iterNum > 5)
 		sr.ownNode.Log.Printf("Is close enough? %t, %s, %s", b, newd, sr.d)
 	}
 	sr.d = newd
 	return b
 }
 
-func (node *Node) SearchNodes(target *NodeInfo) chan int {
+func (node *Node) SearchNodes(target *NodeInfo) {
 	node.Log.Println("Start new searching")
 	sr := new(Searching)
-	go func(sr *Searching) {
-		sr.ownNode = node
-		sr.target = *target
-		sr.visited = make(VisitedMap)
-		sr.results = NodeInfos{node, nil}
-		sr.iterNum = 0
-		sr.d = ""
-		sr.retNum = ALPHA
-		sr.out = make(chan int)
-		sr.in = make(chan int)
-		node.search(sr)
-		node.Routing.Print()
-		node.Save()
-	}(sr)
-	return sr.out
+	sr.ownNode = node
+	sr.target = *target
+	sr.visited = make(VisitedMap)
+	sr.results = NodeInfos{node, nil}
+	sr.iterNum = 0
+	sr.d = ""
+	sr.retNum = ALPHA
+	node.search(sr)
 }
 
 func (node *Node) BootstrapNode() []*NodeInfo {
 	raddr, err := net.ResolveUDPAddr("udp", TRANSMISSIONBT)
 	if err != nil {
-		panic(err)
+		node.Log.Printf("Boot error %s", err)
+		return nil
 	}
 	closestNodes := make([]*NodeInfo, 1)
 	closestNodes[0] = &NodeInfo{raddr.IP, raddr.Port, nil, GOOD}
@@ -181,7 +250,8 @@ func (node *Node) BootstrapNode() []*NodeInfo {
 }
 
 func (node *Node) search(sr *Searching) {
-	node.Log.Printf("===============iter #%d=================", sr.iterNum)
+	node.Log.Printf("===============iter #%d[%s]=================", sr.iterNum, sr.target.ID.HexString())
+	//TODO FIND ME CHECKING
 	closestNodes := sr.Closest()
 	if len(closestNodes) == 0 {
 		closestNodes = node.Routing.FindNode(&sr.target, sr.retNum)
@@ -200,16 +270,25 @@ func (node *Node) search(sr *Searching) {
 
 	var ch chan string
 	if len(reqs) > 0 {
-		ch = node.nw.broker.WaitResponse(reqs, time.Second * 10)
+		ch = node.nw.broker.WaitResponse(reqs, time.Second*10)
 		for i := 0; i < len(reqs); i++ {
-			tid := <- ch
+			tid := <-ch
 			if tid != "" {
 				for _, req := range reqs {
 					if req.Tid != tid {
 						continue
 					}
-					res := req.Response.Addion.(*Response)
-					nodes := []byte(res.R["nodes"].(string))
+					res, ok := req.Response.Addion.(*Response)
+					if !ok {
+						node.Log.Printf("Response is invalid")
+						continue
+					}
+					nodestr, ok := res.R["nodes"].(string)
+					if !ok {
+						node.Log.Printf("Nodes isn't string")
+						continue
+					}
+					nodes := []byte(nodestr)
 					rets := ParseBytesStream(nodes)
 					node.Log.Printf("%d nodes received", len(rets))
 					for _, v1 := range rets {
@@ -221,6 +300,13 @@ func (node *Node) search(sr *Searching) {
 						sr.InsertNewNode(v1)
 					}
 				}
+			}
+		}
+		for _, v := range reqs {
+			if v.Response != nil {
+				node.Routing.UpNode(v.SN)
+			} else {
+				node.Routing.DownNode(v.SN)
 			}
 		}
 	}
@@ -241,16 +327,15 @@ func (node *Node) sendFindNode(sr *Searching, sn *NodeInfo) *Request {
 		return nil
 	}
 
-	r := NewRequest(tid, node)
+	r := NewRequest(tid, node, sn)
 	node.nw.broker.AddRequest(r) //Add request before send it
 
 	sr.visited[sn.ID.HexString()] = true
 	node.Log.Printf("Find node on #%x-%s", tid, sn)
-	nwrite, err := node.nw.Conn.WriteToUDP([]byte(data), raddr)
+
+	err = node.nw.Send([]byte(data), raddr)
 	if err != nil {
-		node.Log.Panicln(err)
-	} else {
-		node.Log.Printf("Write %d bytes success", nwrite)
+		return nil
 	}
 	return r
 }

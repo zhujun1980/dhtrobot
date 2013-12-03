@@ -3,11 +3,13 @@ package dht
 import (
 	"container/list"
 	"fmt"
+	"time"
 )
 
 type Bucket struct {
-	Min, Max int
-	Nodes    *list.List
+	Min, Max   int
+	Nodes      *list.List
+	LastUpdate time.Time
 }
 
 func NewBucket(min, max int) *Bucket {
@@ -15,7 +17,12 @@ func NewBucket(min, max int) *Bucket {
 	b.Min = min
 	b.Max = max
 	b.Nodes = list.New()
+	b.LastUpdate = time.Now()
 	return b
+}
+
+func (bucket *Bucket) Touch() {
+	bucket.LastUpdate = time.Now()
 }
 
 func (bucket *Bucket) Len() int {
@@ -24,6 +31,7 @@ func (bucket *Bucket) Len() int {
 
 func (bucket *Bucket) Add(n *NodeInfo) {
 	bucket.Nodes.PushBack(n)
+	bucket.Touch()
 }
 
 func (bucket *Bucket) Exists(node *NodeInfo) (*list.Element, bool) {
@@ -37,8 +45,20 @@ func (bucket *Bucket) Exists(node *NodeInfo) (*list.Element, bool) {
 	return nil, false
 }
 
-func (bucket *Bucket) Find(other *NodeInfo, result []*NodeInfo) int {
-	return 0
+func (bucket *Bucket) Copy(result *[]*NodeInfo, maxsize int) int {
+	nw := 0
+	l := bucket.Nodes
+	for e := l.Back(); e != nil; e = e.Prev() {
+		ni := e.Value.(*NodeInfo)
+		if ni.Status == GOOD {
+			*result = append(*result, ni)
+			nw++
+			if len(*result) == maxsize {
+				break
+			}
+		}
+	}
+	return nw
 }
 
 func (bucket *Bucket) Print(own *NodeInfo) {
@@ -75,26 +95,59 @@ func (routing *Routing) Print() {
 	}
 }
 
+func (routing *Routing) UpNode(node *NodeInfo) {
+	if node.ID == nil || len(node.ID) == 0 {
+		return
+	}
+	bucket, _ := routing.findBucket(node)
+	if elem, ok := bucket.Exists(node); ok {
+		n := elem.Value.(*NodeInfo)
+		n.Status = GOOD
+		routing.ownNode.Log.Printf("UpNode %s", n.ID.HexString())
+		bucket.Nodes.MoveToBack(elem)
+	}
+}
+
+func (routing *Routing) DownNode(node *NodeInfo) {
+	if node.ID == nil || len(node.ID) == 0 {
+		return
+	}
+	bucket, _ := routing.findBucket(node)
+	if elem, ok := bucket.Exists(node); ok {
+		n := elem.Value.(*NodeInfo)
+		n.Status += 1
+		routing.ownNode.Log.Printf("DownNode %s %d", n.ID.HexString(), n.Status)
+		if n.Status == BAD {
+			routing.ownNode.Log.Printf("%s become bad", n.ID.HexString())
+			bucket.Nodes.Remove(elem)
+		}
+	}
+}
+
 func (routing *Routing) FindNode(other *NodeInfo, num int) []*NodeInfo {
 	var result []*NodeInfo
 
-	//if routing.isMe(other) {
-	//	result[0] = routing.ownNode.Info
-	//	return result, 1
-	//}
-
 	bucket, _ := routing.findBucket(other)
-	l := bucket.Nodes
-	for e := l.Front(); e != nil; e = e.Next() {
-		ni := e.Value.(*NodeInfo)
-		if ni.ID.CompareTo(other.ID) == 0 {
-			continue
+	p := bucket.Min
+	n := bucket.Max
+
+	for p >= 0 || n < 160 {
+		if b, ok := routing.table[p]; ok {
+			b.Copy(&result, num)
+			if len(result) == num {
+				break
+			}
 		}
-		result = append(result, ni)
-		if len(result) == ALPHA {
-			break
+		if b, ok := routing.table[n]; ok {
+			b.Copy(&result, num)
+			if len(result) == num {
+				break
+			}
 		}
+		p--
+		n++
 	}
+
 	if len(result) > 0 {
 		routing.ownNode.Log.Printf("Find nodes from routing, %s",
 			NodesInfosToString(result))
@@ -118,12 +171,6 @@ func (routing *Routing) InsertNode(other *NodeInfo) {
 	}
 
 	//TODO send ping
-	//bucket.removeBad()
-	//if bucket.Len() < K {
-	//	bucket.Add(other)
-	//	return
-	//}
-
 	if idx == 0 {
 		routing.splitBucket(bucket)
 		routing.InsertNode(other)

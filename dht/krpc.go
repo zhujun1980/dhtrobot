@@ -1,11 +1,12 @@
 package dht
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/zeebo/bencode"
 	"math"
+	"net"
 	"sync/atomic"
-	"bytes"
 )
 
 type Action func(ctx interface{}, message *KRPCMessage)
@@ -49,6 +50,29 @@ type Query struct {
 func (q *Query) String() string {
 	buf := bytes.NewBufferString("[")
 	buf.WriteString(q.Y)
+	id := Identifier(q.A["id"].(string))
+	buf.WriteString(id.HexString())
+
+	switch q.Y {
+	case "ping":
+		break
+	case "find_node":
+		target := Identifier(q.A["target"].(string))
+		buf.WriteString(fmt.Sprintf(" %s", target.HexString()))
+		break
+	case "get_peers":
+		info_hash := Identifier(q.A["info_hash"].(string))
+		buf.WriteString(fmt.Sprintf(" %s", info_hash.HexString()))
+		break
+	case "announce_peer":
+		implied_port := q.A["implied_port"].(int)
+		info_hash := Identifier(q.A["info_hash"].(string))
+		port := q.A["port"].(int)
+		token := q.A["token"].(string)
+		buf.WriteString(fmt.Sprintf("%d %s %d %s",
+			implied_port, info_hash.HexString(), port, token))
+		break
+	}
 	buf.WriteString("]")
 	return buf.String()
 }
@@ -78,12 +102,13 @@ type KRPCMessage struct {
 	T      string
 	Y      string
 	Addion interface{}
+	Addr   *net.UDPAddr
 }
 
 func (m *KRPCMessage) String() string {
 	buf := bytes.NewBufferString("{")
 	buf.WriteString(fmt.Sprintf("#%s %s ", m.T, m.Y))
-	switch (m.Y) {
+	switch m.Y {
 	case "q":
 		q := m.Addion.(*Query)
 		buf.WriteString(q.String())
@@ -110,16 +135,15 @@ func (encode *KRPC) autoID() uint32 {
 	return atomic.AddUint32(&encode.tid, 1)
 }
 
-func (encode *KRPC) DecodeFindNodes(msg string) []*NodeInfo {
-	message, err := encode.Decode(msg)
-	if err != nil {
-		encode.ownNode.Log.Panicln(err)
-		return nil
+func ConvertByteStream(nodes []*NodeInfo) []byte {
+	buf := bytes.NewBufferString("")
+	for _, v := range nodes {
+		buf.Write(v.ID)
+		buf.Write(v.IP)
+		buf.WriteByte(byte((v.Port & 0xFF00) >> 8))
+		buf.WriteByte(byte(v.Port & 0xFF))
 	}
-	res := message.Addion.(*Response)
-	nodes := []byte(res.R["nodes"].(string))
-	rets := ParseBytesStream(nodes)
-	return rets
+	return buf.Bytes()
 }
 
 func ParseBytesStream(data []byte) []*NodeInfo {
@@ -135,7 +159,7 @@ func ParseBytesStream(data []byte) []*NodeInfo {
 	return nodes
 }
 
-func (encode *KRPC) Decode(message string) (*KRPCMessage, error) {
+func (encode *KRPC) Decode(message string, raddr *net.UDPAddr) (*KRPCMessage, error) {
 	val := make(map[string]interface{})
 
 	if err := bencode.DecodeString(message, &val); err != nil {
@@ -144,6 +168,7 @@ func (encode *KRPC) Decode(message string) (*KRPCMessage, error) {
 		message := new(KRPCMessage)
 		message.T = val["t"].(string)
 		message.Y = val["y"].(string)
+		message.Addr = raddr
 		switch message.Y {
 		case "q": //query recv from other node
 			query := new(Query)
@@ -184,4 +209,27 @@ func (encode *KRPC) EncodingFindNode(target *NodeInfo) (uint32, string, error) {
 	v["a"] = args
 	s, err := bencode.EncodeString(v)
 	return tid, s, err
+}
+
+func (encode *KRPC) EncodeingPong(tid string) (string, error) {
+	v := make(map[string]interface{})
+	v["t"] = fmt.Sprintf("%s", tid)
+	v["y"] = "r"
+	args := make(map[string]string)
+	args["id"] = encode.ownNode.Info.ID.String()
+	v["r"] = args
+	s, err := bencode.EncodeString(v)
+	return s, err
+}
+
+func (encode *KRPC) EncodingNodeResult(tid string, nodes []byte) (string, error) {
+	v := make(map[string]interface{})
+	v["t"] = fmt.Sprintf("%s", tid)
+	v["y"] = "r"
+	args := make(map[string]string)
+	args["id"] = encode.ownNode.Info.ID.String()
+	args["nodes"] = bytes.NewBuffer(nodes).String()
+	v["r"] = args
+	s, err := bencode.EncodeString(v)
+	return s, err
 }

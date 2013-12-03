@@ -7,12 +7,6 @@ import (
 )
 
 func main() {
-	//reader, _ := os.Open("9d7cdf2a40cc491101641c257e97ce0d6247c848")
-	//node := new(dht.Node)
-	//r, _ := dht.LoadRouting(node, reader)
-	//r.Print()
-	//return
-
 	persist := dht.GetPersist()
 	if persist == nil {
 		fmt.Println("db err")
