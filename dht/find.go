@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"container/list"
 	"fmt"
 	"net"
 	"sort"
@@ -92,7 +93,8 @@ func (node *Node) searchNodes(target Identifier) {
 	var startNodes []*NodeInfo = nil
 	if node.Routing.Len() > 0 {
 		startNodes = node.Routing.FindNode(sr.target, ALPHA)
-	} else {
+	}
+	if len(startNodes) == 0 {
 		raddr, err := net.ResolveUDPAddr("udp", TRANSMISSIONBT)
 		if err != nil {
 			node.Log.Fatalf("Resolve DNS error, %s\n", err)
@@ -106,7 +108,20 @@ func (node *Node) searchNodes(target Identifier) {
 
 	node.Log.Println("Search Result:")
 	node.Log.Println(NodesInfosToString(sr.results.NIS))
-	//bucket, idx := node.Routing.findBucket(sr.target)
+
+	bucket, _ := node.Routing.findBucket(sr.target)
+	newlst := list.New()
+	for _, nodeinfo := range sr.results.NIS {
+		if flag, ok := sr.visited[nodeinfo.ID.HexString()]; ok && flag&3 == 3 {
+			newlst.PushBack(nodeinfo)
+			if newlst.Len() == K {
+				break
+			}
+		}
+	}
+	bucket.Touch()
+	bucket.Nodes = newlst
+
 	node.Routing.Print()
 }
 
@@ -127,7 +142,6 @@ func (node *Node) search(sr *SearchResult) {
 					nodes := ParseBytesStream([]byte(nodestr))
 					node.Log.Printf("%d nodes received", len(nodes))
 					sr.AddResult(nodes)
-					//node.Routing.InsertNode(req.SN)
 				}
 			}
 		}

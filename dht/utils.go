@@ -9,7 +9,7 @@ func FanInRequests(rs []*Request, t time.Duration) chan *Request {
 
 	for _, r := range rs {
 		go func(r *Request) {
-			r.Node.Log.Printf("Wait response #%s", r.Tid)
+			//r.Node.Log.Printf("Wait response #%s", r.Tid)
 			select {
 			case s := <-r.ch:
 				ch <- s
