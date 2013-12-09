@@ -1,8 +1,13 @@
 package dht
 
 import (
+	"bufio"
+	"bytes"
 	"container/list"
+	"encoding/binary"
 	"fmt"
+	"io"
+	"log"
 	"time"
 )
 
@@ -74,15 +79,79 @@ type Table map[int]*Bucket
 type Routing struct {
 	ownNode *Node
 	table   Table
+	log     *log.Logger
 }
 
 func NewRouting(ownNode *Node) *Routing {
 	routing := new(Routing)
 	routing.ownNode = ownNode
+	routing.log = ownNode.Log
 	b := NewBucket(0, 160)
 	routing.table = make(Table)
-	routing.table[0] = b
+	routing.table[0] = b //There is only one bucket at first
+
+	data, err := GetPersist().LoadNodeInfo(ownNode.ID())
+	if err == nil && len(data) > 0 {
+		err = routing.LoadRouting(bytes.NewBuffer(data))
+		if err != nil {
+			panic(err)
+		}
+	}
 	return routing
+}
+
+func (routing *Routing) Len() int {
+	var len int
+	for _, v := range routing.table {
+		l := v.Nodes
+		len += l.Len()
+	}
+	return len
+}
+
+func (routing *Routing) LoadRouting(reader io.Reader) error {
+	buf := bufio.NewReader(reader)
+	var data []byte = make([]byte, 24)
+	_, err := buf.Read(data)
+	if err != nil {
+		return err
+	}
+
+	var length uint32 = 0
+	err = binary.Read(bytes.NewBuffer(data[20:24]), binary.LittleEndian, &length)
+	if err != nil {
+		return err
+	}
+
+	var stream []byte = make([]byte, length)
+	_, err = buf.Read(stream)
+	if err != nil {
+		return err
+	}
+	nodes := ParseBytesStream(stream)
+	for _, v := range nodes {
+		routing.InsertNode(v)
+	}
+	return nil
+}
+
+func (routing *Routing) Save() {
+	buf := bytes.NewBuffer(nil)
+	for _, v := range routing.table {
+		l := v.Nodes
+		for e := l.Front(); e != nil; e = e.Next() {
+			ni := e.Value.(*NodeInfo)
+			buf.Write(ni.ID)
+			buf.Write(ni.IP)
+			buf.WriteByte(byte((ni.Port & 0xFF00) >> 8))
+			buf.WriteByte(byte(ni.Port & 0xFF))
+		}
+	}
+	bufHeader := bytes.NewBuffer(nil)
+	bufHeader.Write(routing.ownNode.ID())
+	binary.Write(bufHeader, binary.LittleEndian, uint32(buf.Len()))
+	bufHeader.Write(buf.Bytes())
+	GetPersist().UpdateNodeInfo(routing.ownNode.ID(), bufHeader.Bytes())
 }
 
 func (routing *Routing) Print() {
@@ -99,7 +168,7 @@ func (routing *Routing) UpNode(node *NodeInfo) {
 	if node.ID == nil || len(node.ID) == 0 {
 		return
 	}
-	bucket, _ := routing.findBucket(node)
+	bucket, _ := routing.findBucket(node.ID)
 	if elem, ok := bucket.Exists(node); ok {
 		n := elem.Value.(*NodeInfo)
 		n.Status = GOOD
@@ -112,7 +181,7 @@ func (routing *Routing) DownNode(node *NodeInfo) {
 	if node.ID == nil || len(node.ID) == 0 {
 		return
 	}
-	bucket, _ := routing.findBucket(node)
+	bucket, _ := routing.findBucket(node.ID)
 	if elem, ok := bucket.Exists(node); ok {
 		n := elem.Value.(*NodeInfo)
 		n.Status += 1
@@ -124,7 +193,7 @@ func (routing *Routing) DownNode(node *NodeInfo) {
 	}
 }
 
-func (routing *Routing) FindNode(other *NodeInfo, num int) []*NodeInfo {
+func (routing *Routing) FindNode(other Identifier, num int) []*NodeInfo {
 	var result []*NodeInfo
 
 	bucket, _ := routing.findBucket(other)
@@ -160,7 +229,7 @@ func (routing *Routing) InsertNode(other *NodeInfo) {
 		return
 	}
 
-	bucket, idx := routing.findBucket(other)
+	bucket, idx := routing.findBucket(other.ID)
 	if elem, ok := bucket.Exists(other); ok {
 		bucket.Nodes.MoveToBack(elem)
 		return
@@ -193,7 +262,7 @@ func (routing *Routing) splitBucket(bucket *Bucket) {
 	newlst := list.New()
 	for e := l.Front(); e != nil; e = e.Next() {
 		ni := e.Value.(*NodeInfo)
-		idx := routing.bucketIndex(ni)
+		idx := routing.bucketIndex(ni.ID)
 		if idx == b.Min {
 			b.Nodes.PushBack(ni)
 		} else {
@@ -204,11 +273,11 @@ func (routing *Routing) splitBucket(bucket *Bucket) {
 	routing.table[b.Min] = b
 }
 
-func (routing *Routing) bucketIndex(dst *NodeInfo) int {
-	return BucketIndex(routing.ownNode.Info.ID, dst.ID)
+func (routing *Routing) bucketIndex(dst Identifier) int {
+	return BucketIndex(routing.ownNode.ID(), dst)
 }
 
-func (routing *Routing) findBucket(dst *NodeInfo) (*Bucket, int) {
+func (routing *Routing) findBucket(dst Identifier) (*Bucket, int) {
 	idx := routing.bucketIndex(dst)
 	b, ok := routing.table[idx]
 	if ok {

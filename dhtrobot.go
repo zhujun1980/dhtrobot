@@ -8,33 +8,34 @@ import (
 
 func main() {
 	persist := dht.GetPersist()
-	if persist == nil {
-		fmt.Println("db err")
-		return
-	}
 	ids, err := persist.LoadAllNodeIDs()
 	if err != nil {
 		panic(err)
 		return
 	}
+
+	master := make(chan string)
+	logger := os.Stdout
 	if len(ids) > 0 {
 		for _, id := range ids {
-			node, err := persist.LoadNodeInfo(id, os.Stdout)
-			if err != nil {
-				panic(err)
-				return
-			}
-			node.Run()
+			go func() {
+				node := dht.NewNode(dht.HexToID(id), logger, master)
+				node.Run()
+			}()
 		}
 	} else {
 		for i := 0; i < dht.NODENUM; i++ {
 			go func() {
-				node := dht.NewNode(os.Stdout)
+				node := dht.NewNode(dht.GenerateID(), logger, master)
 				node.Run()
 			}()
 		}
 	}
 
-	ch := make(chan bool)
-	<-ch
+	for {
+		select {
+		case msg := <-master:
+			fmt.Println(msg)
+		}
+	}
 }

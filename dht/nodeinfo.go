@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"time"
 )
 
@@ -15,6 +16,21 @@ func GenerateID() Identifier {
 	hash := sha1.New()
 	io.WriteString(hash, time.Now().String())
 	return hash.Sum(nil)
+}
+
+func HexToID(hex string) Identifier {
+	if len(hex) != 40 {
+		return nil
+	}
+	id := make([]byte, 20)
+	j := 0
+	for i := 0; i < len(hex); i += 2 {
+		n1, _ := strconv.ParseInt(hex[i:i+1], 16, 8)
+		n2, _ := strconv.ParseInt(hex[i+1:i+2], 16, 8)
+		id[j] = byte((n1 << 4) + n2)
+		j++
+	}
+	return id
 }
 
 func (id Identifier) String() string {
@@ -77,8 +93,8 @@ func (ni *NodeInfo) String() string {
 }
 
 type NodeInfos struct {
-	OwnNode *Node
-	NIS     []*NodeInfo
+	Target Identifier
+	NIS    []*NodeInfo
 }
 
 func (nis *NodeInfos) Len() int {
@@ -88,8 +104,8 @@ func (nis *NodeInfos) Len() int {
 func (nis *NodeInfos) Less(i, j int) bool {
 	ni := nis.NIS[i]
 	nj := nis.NIS[j]
-	d1 := fmt.Sprintf("%x", Distance(ni.ID, nis.OwnNode.Info.ID))
-	d2 := fmt.Sprintf("%x", Distance(nj.ID, nis.OwnNode.Info.ID))
+	d1 := fmt.Sprintf("%x", Distance(ni.ID, nis.Target))
+	d2 := fmt.Sprintf("%x", Distance(nj.ID, nis.Target))
 	return d1 < d2
 }
 
@@ -99,7 +115,7 @@ func (nis *NodeInfos) Swap(i, j int) {
 
 func (nis *NodeInfos) Print() {
 	for _, v := range nis.NIS {
-		d := fmt.Sprintf("%x", Distance(v.ID, nis.OwnNode.Info.ID))
+		d := fmt.Sprintf("%x", Distance(v.ID, nis.Target))
 		fmt.Println(v, d)
 	}
 }

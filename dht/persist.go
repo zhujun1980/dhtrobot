@@ -1,11 +1,9 @@
 package dht
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/base64"
 	_ "github.com/go-sql-driver/mysql"
-	"io"
 )
 
 const (
@@ -28,7 +26,6 @@ func GetPersist() *Persist {
 		GPersist.db, err = sql.Open("mysql", DSN)
 		if err != nil {
 			panic(err)
-			return nil
 		}
 	}
 	return GPersist
@@ -62,14 +59,14 @@ func (persist *Persist) LoadAllNodeIDs() ([]string, error) {
 	return ret, nil
 }
 
-func (persist *Persist) LoadNodeInfo(id string, logger io.Writer) (*Node, error) {
+func (persist *Persist) LoadNodeInfo(id Identifier) ([]byte, error) {
 	stmt, err := persist.db.Prepare(SELNODE)
 	if err != nil {
 		return nil, err
 	}
 	defer stmt.Close()
 
-	rows, _ := stmt.Query(id)
+	rows, _ := stmt.Query(id.HexString())
 	var routing string
 	for rows.Next() {
 		rows.Scan(&routing)
@@ -80,9 +77,5 @@ func (persist *Persist) LoadNodeInfo(id string, logger io.Writer) (*Node, error)
 	if err != nil {
 		return nil, err
 	}
-	node, err := LoadNode(bytes.NewBuffer(data), logger)
-	if err != nil {
-		return nil, err
-	}
-	return node, nil
+	return data, nil
 }
