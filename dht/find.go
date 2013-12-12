@@ -20,6 +20,7 @@ func (node *Node) NodeFinder() {
 		case <-time.After(10 * time.Second):
 			node.refreshRoutingTable(false)
 		}
+		node.Routing.Save()
 	}
 }
 
@@ -27,13 +28,11 @@ func (node *Node) refreshRoutingTable(force bool) {
 	i := 1
 	for k, v := range node.Routing.table {
 		if force || v.LastUpdate.Add(EXPIRE_DURATION).Before(time.Now()) {
-			if v.Nodes.Len() == 0 {
-				continue
-			}
 			node.Log.Printf("Bucket expired, #%d k=%d [%s][%s]", i, k, v.LastUpdate, time.Now())
-			ni := v.Nodes.Front().Value.(*NodeInfo)
-			node.searchNodes(ni.ID)
+			randid := RandID(node.ID(), v.Min)
+			node.searchNodes(randid)
 			i++
+			node.Routing.Save()
 		}
 	}
 	node.Log.Printf("Refresh finished")
@@ -68,6 +67,9 @@ func (sr *SearchResult) IsCloseEnough() bool {
 		return false
 	}
 	cl := sr.results.NIS[0]
+	if cl.ID.HexString() == "" {
+		return false
+	}
 	newd := fmt.Sprintf("%x", Distance(sr.target, cl.ID))
 	b := false
 	if sr.d != "" {
@@ -100,7 +102,8 @@ func (node *Node) searchNodes(target Identifier) {
 			node.Log.Fatalf("Resolve DNS error, %s\n", err)
 			return
 		}
-		startNodes = append(startNodes, &NodeInfo{raddr.IP, raddr.Port, nil, GOOD})
+		startNodes = append(startNodes,
+			&NodeInfo{raddr.IP, raddr.Port, GenerateID(), GOOD, time.Now()})
 		node.Log.Printf("Bootstrap from %s[%s]", TRANSMISSIONBT, raddr)
 	}
 	sr.AddResult(startNodes)
@@ -110,18 +113,13 @@ func (node *Node) searchNodes(target Identifier) {
 	node.Log.Println(NodesInfosToString(sr.results.NIS))
 
 	bucket, _ := node.Routing.findBucket(sr.target)
-	newlst := list.New()
+	bucket.Nodes = list.New()
 	for _, nodeinfo := range sr.results.NIS {
 		if flag, ok := sr.visited[nodeinfo.ID.HexString()]; ok && flag&3 == 3 {
-			newlst.PushBack(nodeinfo)
-			if newlst.Len() == K {
-				break
-			}
+			//如果访问过，而且有回应
+			node.Routing.InsertNode(nodeinfo)
 		}
 	}
-	bucket.Touch()
-	bucket.Nodes = newlst
-
 	node.Routing.Print()
 }
 
@@ -142,6 +140,7 @@ func (node *Node) search(sr *SearchResult) {
 					nodes := ParseBytesStream([]byte(nodestr))
 					node.Log.Printf("%d nodes received", len(nodes))
 					sr.AddResult(nodes)
+					node.Routing.InsertNode(req.SN)
 				}
 			}
 		}

@@ -17,6 +17,7 @@ type Bucket struct {
 	LastUpdate time.Time
 }
 
+// [2 ^ min, 2 ^ max)
 func NewBucket(min, max int) *Bucket {
 	b := new(Bucket)
 	b.Min = min
@@ -158,7 +159,7 @@ func (routing *Routing) Print() {
 	tab := routing.table
 	for i := 0; i < 160; i++ {
 		if v, ok := tab[i]; ok {
-			fmt.Println(v.Min, "-", v.Max, ":")
+			fmt.Println(v.Min, "-", v.Max, ":[", v.LastUpdate, "]")
 			v.Print(&routing.ownNode.Info)
 		}
 	}
@@ -218,8 +219,8 @@ func (routing *Routing) FindNode(other Identifier, num int) []*NodeInfo {
 	}
 
 	if len(result) > 0 {
-		routing.ownNode.Log.Printf("Find nodes from routing, %s",
-			NodesInfosToString(result))
+		routing.ownNode.Log.Printf("Find nodes from routing, %d %d %s",
+			p, n, NodesInfosToString(result))
 	}
 	return result
 }
@@ -231,6 +232,8 @@ func (routing *Routing) InsertNode(other *NodeInfo) {
 
 	bucket, idx := routing.findBucket(other.ID)
 	if elem, ok := bucket.Exists(other); ok {
+		ni := elem.Value.(*NodeInfo)
+		ni.Touch()
 		bucket.Nodes.MoveToBack(elem)
 		return
 	}

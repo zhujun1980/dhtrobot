@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"time"
+	"math/big"
 )
 
 type Identifier []byte
@@ -42,8 +43,8 @@ func (id Identifier) HexString() string {
 }
 
 func (id Identifier) CompareTo(other Identifier) int {
-	s1 := id.String()
-	s2 := other.String()
+	s1 := id.HexString()
+	s2 := other.HexString()
 	if s1 > s2 {
 		return 1
 	} else if s1 == s2 {
@@ -51,6 +52,18 @@ func (id Identifier) CompareTo(other Identifier) int {
 	} else {
 		return -1
 	}
+}
+
+func RandID(src Identifier, diff int) Identifier {
+	ret := big.NewInt(0).SetBytes(GenerateID())
+	srcNum := big.NewInt(0).SetBytes(src)
+	i := srcNum.Bit(diff) ^ 1
+	ret.SetBit(ret, diff, i)
+	for j := diff + 1; j < 160; j++ {
+		ret.SetBit(ret, j, srcNum.Bit(j))
+	}
+
+	return ret.Bytes()
 }
 
 func Distance(src, dst Identifier) []byte {
@@ -81,15 +94,21 @@ func BucketIndex(src, dst Identifier) int {
 }
 
 type NodeInfo struct {
-	IP     net.IP
-	Port   int
-	ID     Identifier
-	Status int8
+	IP       net.IP
+	Port     int
+	ID       Identifier
+	Status   int8
+	LastSeen time.Time
 }
 
 func (ni *NodeInfo) String() string {
-	s := fmt.Sprintf("[%s [%s]:%d %d]", ni.ID.HexString(), ni.IP, ni.Port, ni.Status)
+	s := fmt.Sprintf("[%s [%s]:%d %d %s]",
+		ni.ID.HexString(), ni.IP, ni.Port, ni.Status, ni.LastSeen)
 	return s
+}
+
+func (ni *NodeInfo) Touch() {
+	ni.LastSeen = time.Now()
 }
 
 type NodeInfos struct {

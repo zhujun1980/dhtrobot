@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"sync/atomic"
+	"time"
 )
 
 type KRPC struct {
@@ -139,6 +140,7 @@ func ParseBytesStream(data []byte) []*NodeInfo {
 		port := kn[24:26]
 		node.Port = int(port[0])<<8 + int(port[1])
 		node.Status = GOOD
+		node.LastSeen = time.Now()
 
 		nodes = append(nodes, node)
 	}
