@@ -140,7 +140,6 @@ func (node *Node) search(sr *SearchResult) {
 					nodes := ParseBytesStream([]byte(nodestr))
 					node.Log.Printf("%d nodes received", len(nodes))
 					sr.AddResult(nodes)
-					node.Routing.InsertNode(req.SN)
 				}
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"time"
 )
 
 type Node struct {
@@ -78,6 +79,12 @@ func (node *Node) ProcessQuery(m *KRPCMessage) {
 			break
 		case "get_peers":
 			node.Log.Printf("Recv GET_PEERS %s", m.String())
+			if infohash, ok := q.A["infohash"].(string); ok {
+				node.Log.Printf("%s", infohash)
+				//search infohash
+				//not found, search nearby nodes
+				//return token
+			}
 			break
 		case "announce_peer":
 			node.Log.Printf("Recv ANNOUNCE_PEER %s", m.String())
@@ -89,12 +96,7 @@ func (node *Node) ProcessQuery(m *KRPCMessage) {
 		queryNode.Port = m.Addr.Port
 		queryNode.Status = GOOD
 		queryNode.ID = Identifier(q.A["id"].(string))
+		queryNode.LastSeen = time.Now()
 		node.Routing.InsertNode(queryNode)
 	}
-}
-
-func (node *Node) GetPeers(infohash *string) {
-}
-
-func (node *Node) AnnouncePeer(infohash *string) {
 }

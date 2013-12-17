@@ -232,9 +232,8 @@ func (routing *Routing) InsertNode(other *NodeInfo) {
 
 	bucket, idx := routing.findBucket(other.ID)
 	if elem, ok := bucket.Exists(other); ok {
-		ni := elem.Value.(*NodeInfo)
-		ni.Touch()
-		bucket.Nodes.MoveToBack(elem)
+		bucket.Nodes.Remove(elem)
+		bucket.Add(other)
 		return
 	}
 	if bucket.Len() < K {
@@ -242,7 +241,6 @@ func (routing *Routing) InsertNode(other *NodeInfo) {
 		return
 	}
 
-	//TODO send ping
 	if idx == 0 {
 		routing.splitBucket(bucket)
 		routing.InsertNode(other)
