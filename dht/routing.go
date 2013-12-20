@@ -142,10 +142,7 @@ func (routing *Routing) Save() {
 		l := v.Nodes
 		for e := l.Front(); e != nil; e = e.Next() {
 			ni := e.Value.(*NodeInfo)
-			buf.Write(ni.ID)
-			buf.Write(ni.IP)
-			buf.WriteByte(byte((ni.Port & 0xFF00) >> 8))
-			buf.WriteByte(byte(ni.Port & 0xFF))
+			convertNodeInfo(buf, ni)
 		}
 	}
 	bufHeader := bytes.NewBuffer(nil)

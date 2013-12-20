@@ -9,13 +9,16 @@ import (
 	"strconv"
 	"time"
 	"math/big"
+	"math/rand"
 )
 
 type Identifier []byte
 
 func GenerateID() Identifier {
+	random := rand.New(rand.NewSource(time.Now().UnixNano()))
 	hash := sha1.New()
 	io.WriteString(hash, time.Now().String())
+	io.WriteString(hash, string(random.Int()))
 	return hash.Sum(nil)
 }
 

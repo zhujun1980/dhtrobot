@@ -115,13 +115,21 @@ func (encode *KRPC) autoID() uint32 {
 	return atomic.AddUint32(&encode.tid, 1)
 }
 
+func convertIPPort(buf *bytes.Buffer, ip net.IP, port int) {
+	buf.Write(ip)
+	buf.WriteByte(byte((port & 0xFF00) >> 8))
+	buf.WriteByte(byte(port & 0xFF))
+}
+
+func convertNodeInfo(buf *bytes.Buffer, v *NodeInfo) {
+	buf.Write(v.ID)
+	convertIPPort(buf, v.IP, v.Port)
+}
+
 func ConvertByteStream(nodes []*NodeInfo) []byte {
 	buf := bytes.NewBuffer(nil)
 	for _, v := range nodes {
-		buf.Write(v.ID)
-		buf.Write(v.IP)
-		buf.WriteByte(byte((v.Port & 0xFF00) >> 8))
-		buf.WriteByte(byte(v.Port & 0xFF))
+		convertNodeInfo(buf, v)
 	}
 	return buf.Bytes()
 }
@@ -207,13 +215,29 @@ func (encode *KRPC) EncodeingPong(tid string) (string, error) {
 	return s, err
 }
 
-func (encode *KRPC) EncodingNodeResult(tid string, nodes []byte) (string, error) {
+func (encode *KRPC) EncodingNodeResult(tid string, token string, nodes []byte) (string, error) {
 	v := make(map[string]interface{})
-	v["t"] = fmt.Sprintf("%s", tid)
+	v["t"] = tid
 	v["y"] = "r"
 	args := make(map[string]string)
 	args["id"] = encode.ownNode.Info.ID.String()
+	if token != "" {
+		args["token"] = token
+	}
 	args["nodes"] = bytes.NewBuffer(nodes).String()
+	v["r"] = args
+	s, err := bencode.EncodeString(v)
+	return s, err
+}
+
+func (encode *KRPC) EncodingPeerResult(tid string, token string, peers []string) (string, error) {
+	v := make(map[string]interface{})
+	v["t"] = tid
+	v["y"] = "r"
+	args := make(map[string]interface{})
+	args["id"] = encode.ownNode.Info.ID.String()
+	args["token"] = token
+	args["values"] = peers
 	v["r"] = args
 	s, err := bencode.EncodeString(v)
 	return s, err

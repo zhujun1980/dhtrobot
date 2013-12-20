@@ -34,5 +34,5 @@ const (
 )
 
 const (
-	EXPIRE_DURATION = time.Minute * 15
+	EXPIRE_DURATION = time.Minute * 25
 )
