@@ -44,6 +44,7 @@ func (bucket *Bucket) UpdateIfExists(node *NodeInfo) bool {
 	for idx, ni := range bucket.Nodes {
 		if ni.ID.CompareTo(node.ID) == 0 {
 			bucket.Nodes[idx] = node
+			bucket.Touch()
 			return true
 		}
 	}
@@ -71,7 +72,7 @@ func (bucket *Bucket) RandID() Identifier {
 	return z.Bytes()
 }
 
-func (bucket *Bucket) Print(own *NodeInfo) {
+func (bucket *Bucket) Print() {
 	for _, ni := range bucket.Nodes {
 		fmt.Printf("\t%s\n", ni)
 	}
@@ -153,17 +154,17 @@ func (routing *Routing) Print() {
 	fmt.Printf("%s\n", routing.ownNode.Info.String())
 	fmt.Printf("%v\n", []byte(routing.ownNode.ID()))
 	for idx, bucket := range routing.table {
-		fmt.Printf("#%d [%s]\n", idx, bucket.LastUpdate)
+		fmt.Printf("#%d [%s] sz=%d\n", idx, bucket.LastUpdate, len(bucket.Nodes))
 		fmt.Printf("\tMin %v\n", bucket.Min.Bytes())
 		fmt.Printf("\tMax %v\n", bucket.Max.Bytes())
-		bucket.Print(&routing.ownNode.Info)
+		bucket.Print()
 	}
 }
 
 func (routing *Routing) FindNode(other Identifier, num int) []*NodeInfo {
 	var result []*NodeInfo
 
-	p := routing.bucketIndex(other)
+	_, p := routing.findBucket(other)
 	n := p + 1
 
 	for len(result) < num {
@@ -173,6 +174,9 @@ func (routing *Routing) FindNode(other Identifier, num int) []*NodeInfo {
 		if p >= 0 {
 			b := routing.table[p]
 			b.Copy(&result, num)
+		}
+		if len(result) == num {
+			break
 		}
 		if n < len(routing.table) {
 			b := routing.table[n]
@@ -213,22 +217,14 @@ func (routing *Routing) isMe(other *NodeInfo) bool {
 
 func (routing *Routing) splitBucket(bucket *Bucket) {
 	var last *Bucket
-	fmt.Println("==========================")
-	fmt.Println(bucket.Min.Bytes(), bucket.Max.Bytes())
 	mid := bimid(bucket.Max, bucket.Min)
-	fmt.Println(mid.Bytes())
-	fmt.Println(id2bi(routing.ownNode.ID()).Bytes())
 	if id2bi(routing.ownNode.ID()).Cmp(mid) >= 0 {
-		fmt.Println("right")
 		last = NewBucket(mid, bucket.Max)
 		bucket.Max = mid
 	} else {
-		fmt.Println("left")
 		last = NewBucket(bucket.Min, mid)
 		bucket.Min = mid
 	}
-	fmt.Println(bucket.Min.Bytes(), bucket.Max.Bytes())
-	fmt.Println(last.Min.Bytes(), last.Max.Bytes())
 	routing.table = append(routing.table, last)
 
 	var newlst []*NodeInfo

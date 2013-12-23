@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"time"
 )
 
@@ -36,6 +37,14 @@ func NewNode(id Identifier, logger io.Writer, master chan string) *Node {
 
 func (node *Node) ID() Identifier {
 	return node.Info.ID
+}
+
+func (node *Node) Cli() {
+	node.Log.Printf("Current Node %s", &(node.Info))
+
+	go func() { node.nw.StartBroker() }()
+	go func() { node.nw.NetListening() }()
+	go func() { node.KRPCListener() }()
 }
 
 func (node *Node) Run() {
@@ -79,71 +88,67 @@ func (node *Node) ProcessQuery(m *KRPCMessage) {
 
 		switch q.Y {
 		case "ping":
-			node.Log.Printf("Recv PING %s", m.String())
+			node.Log.Printf("Recv PING #%s, %s", m.T, queryNode)
 			data, _ := node.krpc.EncodeingPong(m.T)
-			node.Log.Printf("Pong result %s", data)
 			node.nw.Send([]byte(data), m.Addr)
+			node.Routing.Print()
 			break
 		case "find_node":
-			node.Log.Printf("Recv FIND_NODE %s", m.String())
+			node.Log.Printf("Recv FIND_NODE #%s %s", m.T, m.String())
 			if target, ok := q.A["target"].(string); ok {
 				closestNodes := node.Routing.FindNode(Identifier(target), K)
 				nodes := ConvertByteStream(closestNodes)
 				data, _ := node.krpc.EncodingNodeResult(m.T, "", nodes)
-				node.Log.Printf("Find nodes result %s", data)
 				node.nw.Send([]byte(data), m.Addr)
 			}
 			break
 		case "get_peers":
-			node.Log.Printf("Recv GET_PEERS %s", m.String())
-			if infohash, ok := q.A["infohash"].(string); ok {
-				node.Log.Printf("%s", infohash)
+			node.Log.Printf("Recv GET_PEERS #%s %s", m.T, m.String())
+			if infohash, ok := q.A["info_hash"].(string); ok {
 				ih := Identifier(infohash)
 				GetPersist().AddResource(ih.HexString())
 				token := node.GenToken(queryNode)
 				peers, _ := GetPersist().LoadPeers(ih.HexString())
 				if len(peers) > 0 {
 					data, _ := node.krpc.EncodingPeerResult(m.T, token, peers)
-					node.Log.Printf("Get peer result %s", data)
 					node.nw.Send([]byte(data), m.Addr)
 				} else {
 					closestNodes := node.Routing.FindNode(ih, K)
 					nodes := ConvertByteStream(closestNodes)
 					data, _ := node.krpc.EncodingNodeResult(m.T, token, nodes)
-					node.Log.Printf("Get peer result %s", data)
 					node.nw.Send([]byte(data), m.Addr)
 				}
 			}
 			break
 		case "announce_peer":
-			node.Log.Printf("Recv ANNOUNCE_PEER %s", m.String())
+			node.Log.Printf("Recv ANNOUNCE_PEER #%s %s", m.T, m.String())
 			var infohash string
 			var token string
-			var implied_port int
-			var port int
+			var implied_port int64
+			var port int64
 			var ok bool
 			var tv *TokenVal
-			if infohash, ok = q.A["infohash"].(string); !ok {
+			if infohash, ok = q.A["info_hash"].(string); !ok {
 				break
 			}
 			if token, ok = q.A["token"].(string); !ok {
 				break
 			}
-			if port, ok = q.A["port"].(int); !ok {
+			if port, ok = q.A["port"].(int64); !ok {
 				break
 			}
-			if implied_port, ok = q.A["implied_port"].(int); !ok {
+			if implied_port, ok = q.A["implied_port"].(int64); !ok {
 				implied_port = 0
 			}
 			if implied_port > 0 {
-				port = m.Addr.Port
+				port = int64(m.Addr.Port)
 			}
-			node.Log.Printf("%s-%s-%d-%d", infohash, token, implied_port, port)
+			ih := Identifier(infohash)
 			tv, ok = node.tokens[token]
 			if ok && tv.node.IP.Equal(queryNode.IP) {
-				buf := bytes.NewBuffer(nil)
-				convertIPPort(buf, queryNode.IP, port)
-				GetPersist().AddPeer(infohash, buf.Bytes())
+				buf := bytes.NewBufferString("")
+				convertIPPort(buf, queryNode.IP, int(port))
+				GetPersist().AddPeer(ih.HexString(), buf.Bytes())
 			}
 			if ok {
 				delete(node.tokens, token)
@@ -154,4 +159,92 @@ func (node *Node) ProcessQuery(m *KRPCMessage) {
 		}
 		node.Routing.InsertNode(queryNode)
 	}
+}
+
+func (node *Node) Ping(raddr *net.UDPAddr) error {
+	tid, data, err := node.krpc.EncodeingPing()
+	if err != nil {
+		node.Log.Printf("%s", err)
+		return err
+	}
+	r := NewRequest(tid, node, nil)
+	node.nw.broker.AddRequest(r)
+	node.nw.Send([]byte(data), raddr)
+	var reqs []*Request
+	reqs = append(reqs, r)
+	ch := FanInRequests(reqs, time.Second*3)
+	req := <-ch
+	if req != nil {
+		if res, ok := req.Response.Addion.(*Response); ok {
+			if nodestr, ok := res.R["id"].(string); ok {
+				node.Log.Printf("PING ok #%s %s", req.Tid, Identifier(nodestr).HexString())
+			}
+		}
+	}
+	return nil
+}
+
+func (node *Node) FindNode(raddr *net.UDPAddr, target Identifier) {
+	tid, data, err := node.krpc.EncodingFindNode(target)
+	if err != nil {
+		node.Log.Fatalln(err)
+		return
+	}
+	r := NewRequest(tid, node, nil)
+	node.nw.broker.AddRequest(r)
+	err = node.nw.Send([]byte(data), raddr)
+	var reqs []*Request
+	reqs = append(reqs, r)
+	ch := FanInRequests(reqs, time.Second*3)
+	req := <-ch
+	if req != nil {
+		if res, ok := req.Response.Addion.(*Response); ok {
+			if nodestr, ok := res.R["nodes"].(string); ok {
+				nodes := ParseBytesStream([]byte(nodestr))
+				node.Log.Printf("%d nodes received", len(nodes))
+				node.Log.Printf("%s", NodesInfosToString(nodes))
+			}
+		}
+	}
+	return
+}
+
+func (node *Node) GetPeersAndAnnounce(raddr *net.UDPAddr, infohash Identifier) {
+	tid, data, err := node.krpc.EncodingGetPeers(infohash)
+	if err != nil {
+		node.Log.Fatalln(err)
+		return
+	}
+	r := NewRequest(tid, node, nil)
+	node.nw.broker.AddRequest(r)
+	err = node.nw.Send([]byte(data), raddr)
+	var reqs []*Request
+	reqs = append(reqs, r)
+	ch := FanInRequests(reqs, time.Second*3)
+	req := <-ch
+	if req != nil {
+		if res, ok := req.Response.Addion.(*Response); ok {
+			if token, ok := res.R["token"].(string); ok {
+				node.Log.Printf("%s", token)
+				if nodestr, ok := res.R["nodes"].(string); ok {
+					nodes := ParseBytesStream([]byte(nodestr))
+					node.Log.Printf("%d nodes received", len(nodes))
+					node.Log.Printf("%s", NodesInfosToString(nodes))
+				} else if peers, ok := res.R["values"].([]interface{}); ok {
+					node.Log.Printf("%d peers received", len(peers))
+					for _, peer := range peers {
+						p := []byte(peer.(string))
+						ip := p[0:4]
+						pt := p[4:6]
+						port := int(pt[0])<<8 + int(pt[1])
+						addr := &net.UDPAddr{ip, port, ""}
+						node.Log.Printf("%s", addr)
+					}
+				}
+				tid, data, err = node.krpc.EncodingAnnouncePeer(infohash, node.Info.Port, token)
+				err = node.nw.Send([]byte(data), raddr)
+			}
+		}
+	}
+	return
 }

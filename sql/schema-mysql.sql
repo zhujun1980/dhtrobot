@@ -23,7 +23,7 @@ create table `Peers`
 (
     id int(11) NOT NULL AUTO_INCREMENT,
     infohash VARCHAR(40) not null,
-    peers varchar(20),
+    peers TEXT,
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     primary key(id),
     key(infohash)

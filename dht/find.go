@@ -116,8 +116,6 @@ func (node *Node) searchNodes(target Identifier) {
 			node.Routing.InsertNode(nodeinfo)
 		}
 	}
-
-	node.Routing.Print()
 }
 
 func (node *Node) search(sr *SearchResult) {
@@ -164,7 +162,7 @@ func (node *Node) SendFindNode(sr *SearchResult) []*Request {
 			r := NewRequest(tid, node, v)
 			node.nw.broker.AddRequest(r)
 			sr.visited[v.ID.HexString()] |= 1
-			node.Log.Printf("Send request to #%x, %s", tid, v)
+			node.Log.Printf("Send request to #%d, %s", tid, v)
 			err = node.nw.Send([]byte(data), raddr)
 			if err != nil {
 				node.Log.Println(err)

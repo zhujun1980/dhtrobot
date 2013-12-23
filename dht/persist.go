@@ -14,7 +14,7 @@ const (
 
 	ADDRESU = "REPLACE INTO Resources(infohash) VALUES(?)"
 	ADDPEER = "INSERT INTO Peers(infohash, peers) VALUES(?, ?)"
-	SELPEER = "SELECT peers FROM Peers WHERE infohash = ?"
+	SELPEER = "SELECT peers FROM Peers WHERE infohash = ? ORDER BY ctime DESC LIMIT 10"
 	DELPEER = "DELETE FROM Peers WHERE DATEDIFF(CURRENT_TIMESTAMP(), ctime) >= 1"
 )
 

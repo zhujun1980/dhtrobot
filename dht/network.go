@@ -47,7 +47,7 @@ func (nw *Network) NetListening() {
 		nw.Conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 		nread, raddr, err := nw.Conn.ReadFromUDP(data)
 		if err != nil {
-			nw.ownNode.Log.Printf("Read error, %s", err)
+			//nw.ownNode.Log.Printf("Read error, %s", err)
 			continue
 		}
 		nw.ownNode.Log.Printf("New message, %d bytes, from %s", nread, raddr)
@@ -84,7 +84,7 @@ func NewRequest(tid uint32, node *Node, searchNode *NodeInfo) *Request {
 	r.Node = node
 	r.SN = searchNode
 	r.Response = nil
-	r.Tid = fmt.Sprintf("%x", tid)
+	r.Tid = fmt.Sprintf("%d", tid)
 	return r
 }
 
@@ -119,7 +119,7 @@ func (b *Broker) Run() {
 				//b.ownNode.Log.Printf("Broker dispatchs over")
 				delete(b.reqs, m.T)
 			} else {
-				b.ownNode.Log.Printf("Broker recv query #%s", m.T)
+				//b.ownNode.Log.Printf("Broker recv query #%s", m.T)
 				b.ownNode.NewMsg <- m
 			}
 		case <-time.After(5 * time.Second):

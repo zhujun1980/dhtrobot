@@ -45,12 +45,11 @@ func (q *Query) String() string {
 		buf.WriteString(fmt.Sprintf(" %s", info_hash.HexString()))
 		break
 	case "announce_peer":
-		implied_port := q.A["implied_port"].(int)
+		implied_port := q.A["implied_port"].(int64)
 		info_hash := Identifier(q.A["info_hash"].(string))
-		port := q.A["port"].(int)
-		token := q.A["token"].(string)
-		buf.WriteString(fmt.Sprintf("%d %s %d %s",
-			implied_port, info_hash.HexString(), port, token))
+		port := q.A["port"].(int64)
+		buf.WriteString(fmt.Sprintf("%d %s %d",
+			implied_port, info_hash.HexString(), port))
 		break
 	}
 	buf.WriteString("]")
@@ -87,7 +86,7 @@ type KRPCMessage struct {
 
 func (m *KRPCMessage) String() string {
 	buf := bytes.NewBufferString("{")
-	buf.WriteString(fmt.Sprintf("#%x %s ", m.T, m.Y))
+	buf.WriteString(fmt.Sprintf("#%s %s ", m.T, m.Y))
 	switch m.Y {
 	case "q":
 		q := m.Addion.(*Query)
@@ -116,7 +115,7 @@ func (encode *KRPC) autoID() uint32 {
 }
 
 func convertIPPort(buf *bytes.Buffer, ip net.IP, port int) {
-	buf.Write(ip)
+	buf.Write(ip.To4())
 	buf.WriteByte(byte((port & 0xFF00) >> 8))
 	buf.WriteByte(byte(port & 0xFF))
 }
@@ -193,12 +192,56 @@ func (encode *KRPC) Decode(message string, raddr *net.UDPAddr) (*KRPCMessage, er
 func (encode *KRPC) EncodingFindNode(target Identifier) (uint32, string, error) {
 	tid := encode.GenTID()
 	v := make(map[string]interface{})
-	v["t"] = fmt.Sprintf("%x", tid)
+	v["t"] = fmt.Sprintf("%d", tid)
 	v["y"] = "q"
 	v["q"] = "find_node"
 	args := make(map[string]string)
 	args["id"] = encode.ownNode.Info.ID.String()
 	args["target"] = target.String()
+	v["a"] = args
+	s, err := bencode.EncodeString(v)
+	return tid, s, err
+}
+
+func (encode *KRPC) EncodingGetPeers(infohash Identifier) (uint32, string, error) {
+	tid := encode.GenTID()
+	v := make(map[string]interface{})
+	v["t"] = fmt.Sprintf("%d", tid)
+	v["y"] = "q"
+	v["q"] = "get_peers"
+	args := make(map[string]string)
+	args["id"] = encode.ownNode.Info.ID.String()
+	args["info_hash"] = infohash.String()
+	v["a"] = args
+	s, err := bencode.EncodeString(v)
+	return tid, s, err
+}
+
+func (encode *KRPC) EncodingAnnouncePeer(infohash Identifier, port int, token string) (uint32, string, error) {
+	tid := encode.GenTID()
+	v := make(map[string]interface{})
+	v["t"] = fmt.Sprintf("%d", tid)
+	v["y"] = "q"
+	v["q"] = "announce_peer"
+	args := make(map[string]interface{})
+	args["id"] = encode.ownNode.Info.ID.String()
+	args["token"] = token
+	args["port"] = port
+	args["implied_port"] = 0
+	args["info_hash"] = infohash.String()
+	v["a"] = args
+	s, err := bencode.EncodeString(v)
+	return tid, s, err
+}
+
+func (encode *KRPC) EncodeingPing() (uint32, string, error) {
+	tid := encode.GenTID()
+	v := make(map[string]interface{})
+	v["t"] = fmt.Sprintf("%d", tid)
+	v["y"] = "q"
+	v["q"] = "ping"
+	args := make(map[string]string)
+	args["id"] = encode.ownNode.Info.ID.String()
 	v["a"] = args
 	s, err := bencode.EncodeString(v)
 	return tid, s, err
