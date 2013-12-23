@@ -30,6 +30,7 @@ func NewNode(id Identifier, logger io.Writer, master chan string) *Node {
 	n.nw = NewNetwork(n)
 	n.master = master
 	n.tokens = make(map[string]*TokenVal)
+	n.Info.LastSeen = time.Now()
 	return n
 }
 

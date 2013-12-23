@@ -1,7 +1,6 @@
 package dht
 
 import (
-	"container/list"
 	"fmt"
 	"net"
 	"sort"
@@ -14,28 +13,29 @@ func (node *Node) NodeFinder() {
 	} else {
 		node.refreshRoutingTable(true) //Force refresh all buckets
 	}
-
 	for {
+		node.Routing.Save()
 		select {
 		case <-time.After(10 * time.Second):
 			node.refreshRoutingTable(false)
 		}
-		node.Routing.Save()
 	}
 }
 
 func (node *Node) refreshRoutingTable(force bool) {
-	i := 1
+	changed := false
 	for k, v := range node.Routing.table {
 		if force || v.LastUpdate.Add(EXPIRE_DURATION).Before(time.Now()) {
-			node.Log.Printf("Bucket expired, #%d k=%d [%s][%s]", i, k, v.LastUpdate, time.Now())
-			randid := RandID(node.ID(), v.Min)
+			node.Log.Printf("Bucket expired, k=%d [%s]", k, v.LastUpdate)
+			randid := v.RandID()
 			node.searchNodes(randid)
-			i++
 			node.Routing.Save()
+			changed = true
 		}
 	}
-	node.Log.Printf("Refresh finished")
+	if changed {
+		node.Routing.Print()
+	}
 }
 
 type SearchResult struct {
@@ -89,9 +89,8 @@ func (node *Node) searchNodes(target Identifier) {
 	sr.target = target
 	sr.results = NodeInfos{target, nil}
 	sr.visited = make(map[string]byte)
-	sr.d = ""
-	sr.iterNum = 0
 
+	node.Log.Printf("Begin find node %s", target.HexString())
 	var startNodes []*NodeInfo = nil
 	if node.Routing.Len() > 0 {
 		startNodes = node.Routing.FindNode(sr.target, ALPHA)
@@ -109,22 +108,20 @@ func (node *Node) searchNodes(target Identifier) {
 	sr.AddResult(startNodes)
 	node.search(sr)
 
-	node.Log.Println("Search Result:")
-	node.Log.Println(NodesInfosToString(sr.results.NIS))
-
 	bucket, _ := node.Routing.findBucket(sr.target)
-	bucket.Nodes = list.New()
+	bucket.Nodes = nil
 	for _, nodeinfo := range sr.results.NIS {
 		if flag, ok := sr.visited[nodeinfo.ID.HexString()]; ok && flag&3 == 3 {
 			//如果访问过，而且有回应
 			node.Routing.InsertNode(nodeinfo)
 		}
 	}
+
 	node.Routing.Print()
 }
 
 func (node *Node) search(sr *SearchResult) {
-	node.Log.Printf("=============#%d %s==============", sr.iterNum, sr.target.HexString())
+	node.Log.Printf("=============#%d==============", sr.iterNum)
 	reqs := node.SendFindNode(sr)
 
 	if len(reqs) > 0 {
