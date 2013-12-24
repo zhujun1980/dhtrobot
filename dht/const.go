@@ -13,9 +13,11 @@ const (
 	SENIOR = iota
 )
 
-const (
-	TRANSMISSIONBT = "dht.transmissionbt.com:6881"
-)
+var BOOTSTRAP []string = []string{
+	"dht.transmissionbt.com:6881",
+	"service.ygrek.org.ua:6881",
+	"router.utorrent.com:6881",
+	"router.transmission.com:6881"}
 
 const MAXSIZE = 500
 
@@ -30,7 +32,7 @@ const (
 const DSN = "root:123456@tcp(localhost:3306)/dhtrobot?charset=utf8"
 
 const (
-	NODENUM = 1
+	NODENUM = 10
 )
 
 const (

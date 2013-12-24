@@ -16,20 +16,25 @@ func main() {
 
 	master := make(chan string)
 	logger := os.Stdout
+	mlogger, err := os.OpenFile("msg", os.O_APPEND | os.O_CREATE | os.O_RDWR, 0744)
+	if err != nil {
+		panic(err)
+		return
+	}
 	if len(ids) > 0 {
 		for _, id := range ids {
-			go func() {
-				node := dht.NewNode(dht.HexToID(id), logger, master)
+			go func(curid string) {
+				node := dht.NewNode(dht.HexToID(curid), logger, mlogger, master)
 				node.Run()
-			}()
+			}(id)
 		}
-	} else {
-		for i := 0; i < dht.NODENUM; i++ {
-			go func() {
-				node := dht.NewNode(dht.GenerateID(), logger, master)
-				node.Run()
-			}()
-		}
+	}
+
+	for i := 0; i < dht.NODENUM - len(ids); i++ {
+		go func() {
+			node := dht.NewNode(dht.GenerateID(), logger, mlogger, master)
+			node.Run()
+		}()
 	}
 
 	for {

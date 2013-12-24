@@ -25,7 +25,9 @@ func (node *Node) NodeFinder() {
 func (node *Node) refreshRoutingTable(force bool) {
 	changed := false
 	for k, v := range node.Routing.table {
-		if force || v.LastUpdate.Add(EXPIRE_DURATION).Before(time.Now()) {
+		if force ||
+			v.LastUpdate.Add(EXPIRE_DURATION).Before(time.Now()) ||
+			v.Len() == 0 {
 			node.Log.Printf("Bucket expired, k=%d [%s]", k, v.LastUpdate)
 			randid := v.RandID()
 			node.searchNodes(randid)
@@ -49,6 +51,9 @@ type SearchResult struct {
 
 func (sr *SearchResult) AddResult(nodeinfos []*NodeInfo) {
 	for _, nodeinfo := range nodeinfos {
+		if len(nodeinfo.ID) != 20 {
+			continue
+		}
 		if nodeinfo.ID.HexString() == sr.target.HexString() {
 			continue
 		}
@@ -73,11 +78,22 @@ func (sr *SearchResult) IsCloseEnough() bool {
 	newd := fmt.Sprintf("%x", Distance(sr.target, cl.ID))
 	b := false
 	if sr.d != "" {
-		b = (newd >= sr.d) && sr.iterNum >= 5
+		b = (newd >= sr.d)
 		sr.ownNode.Log.Printf("Is close enough? %t, %s, %s", b, newd, sr.d)
 	}
 	sr.d = newd
 	if b {
+		j := 0
+		for _, v := range sr.results.NIS {
+			if j == K * 2 {
+				break
+			}
+			if flag, ok := sr.visited[v.ID.HexString()]; ok && flag == 0 {
+				sr.ownNode.Log.Printf("Not queried nodes")
+				return false
+			}
+			j++
+		}
 		sr.ownNode.Log.Printf("Finish searching, %d", sr.iterNum)
 	}
 	return b
@@ -96,14 +112,16 @@ func (node *Node) searchNodes(target Identifier) {
 		startNodes = node.Routing.FindNode(sr.target, ALPHA)
 	}
 	if len(startNodes) == 0 {
-		raddr, err := net.ResolveUDPAddr("udp", TRANSMISSIONBT)
-		if err != nil {
-			node.Log.Fatalf("Resolve DNS error, %s\n", err)
-			return
+		for _, host := range BOOTSTRAP {
+			raddr, err := net.ResolveUDPAddr("udp", host)
+			if err != nil {
+				node.Log.Fatalf("Resolve DNS error, %s\n", err)
+				return
+			}
+			startNodes = append(startNodes,
+				&NodeInfo{raddr.IP, raddr.Port, GenerateID(), GOOD, time.Now()})
+			node.Log.Printf("Bootstrap from %s[%s]", host, raddr)
 		}
-		startNodes = append(startNodes,
-			&NodeInfo{raddr.IP, raddr.Port, GenerateID(), GOOD, time.Now()})
-		node.Log.Printf("Bootstrap from %s[%s]", TRANSMISSIONBT, raddr)
 	}
 	sr.AddResult(startNodes)
 	node.search(sr)
@@ -149,7 +167,7 @@ func (node *Node) SendFindNode(sr *SearchResult) []*Request {
 	var reqs []*Request
 
 	for _, v := range sr.results.NIS {
-		if flag, ok := sr.visited[v.ID.HexString()]; ok && 0 == (flag&1) {
+		if flag, ok := sr.visited[v.ID.HexString()]; ok && 0 == flag {
 			if v.IP.Equal(net.IPv4(0, 0, 0, 0)) || v.Port == 0 {
 				continue
 			}

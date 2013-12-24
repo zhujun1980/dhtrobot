@@ -15,16 +15,18 @@ type Node struct {
 	krpc    *KRPC
 	nw      *Network
 	Log     *log.Logger
+	MLog    *log.Logger
 	NewMsg  chan *KRPCMessage
 	master  chan string
 	tokens  map[string]*TokenVal
 	secret  string
 }
 
-func NewNode(id Identifier, logger io.Writer, master chan string) *Node {
+func NewNode(id Identifier, logger io.Writer, mlogger io.Writer, master chan string) *Node {
 	n := new(Node)
 	n.Info.ID = id
-	n.Log = log.New(logger, "N ", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
+	n.Log = log.New(logger, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
+	n.MLog = log.New(mlogger, id.HexString() + " ", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
 	n.NewMsg = make(chan *KRPCMessage)
 	n.Routing = NewRouting(n)
 	n.krpc = NewKRPC(n)
@@ -88,13 +90,13 @@ func (node *Node) ProcessQuery(m *KRPCMessage) {
 
 		switch q.Y {
 		case "ping":
-			node.Log.Printf("Recv PING #%s, %s", m.T, queryNode)
+			node.MLog.Printf("Recv PING #%s, %s", m.T, queryNode)
 			data, _ := node.krpc.EncodeingPong(m.T)
 			node.nw.Send([]byte(data), m.Addr)
 			node.Routing.Print()
 			break
 		case "find_node":
-			node.Log.Printf("Recv FIND_NODE #%s %s", m.T, m.String())
+			node.MLog.Printf("Recv FIND_NODE #%s %s", m.T, m.String())
 			if target, ok := q.A["target"].(string); ok {
 				closestNodes := node.Routing.FindNode(Identifier(target), K)
 				nodes := ConvertByteStream(closestNodes)
@@ -103,7 +105,7 @@ func (node *Node) ProcessQuery(m *KRPCMessage) {
 			}
 			break
 		case "get_peers":
-			node.Log.Printf("Recv GET_PEERS #%s %s", m.T, m.String())
+			node.MLog.Printf("Recv GET_PEERS #%s %s", m.T, m.String())
 			if infohash, ok := q.A["info_hash"].(string); ok {
 				ih := Identifier(infohash)
 				GetPersist().AddResource(ih.HexString())
@@ -121,7 +123,7 @@ func (node *Node) ProcessQuery(m *KRPCMessage) {
 			}
 			break
 		case "announce_peer":
-			node.Log.Printf("Recv ANNOUNCE_PEER #%s %s", m.T, m.String())
+			node.MLog.Printf("Recv ANNOUNCE_PEER #%s %s", m.T, m.String())
 			var infohash string
 			var token string
 			var implied_port int64

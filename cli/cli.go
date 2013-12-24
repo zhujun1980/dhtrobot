@@ -23,8 +23,9 @@ func main() {
 	flag.Parse()
 
 	logger := os.Stdout
+	mlogger := os.Stdout
 	master := make(chan string)
-	node := dht.NewNode(dht.GenerateID(), logger, master)
+	node := dht.NewNode(dht.GenerateID(), logger, mlogger, master)
 	node.Cli()
 	switch cmd {
 	case "ping":

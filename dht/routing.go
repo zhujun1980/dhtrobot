@@ -69,7 +69,11 @@ func (bucket *Bucket) RandID() Identifier {
 	d := bisub(bucket.Max, bucket.Min)
 	random := rand.New(rand.NewSource(time.Now().UnixNano()))
 	z := biadd(bucket.Min, d.Rand(random, d))
-	return z.Bytes()
+	ret := make([]byte, 20)
+	for idx, b := range z.Bytes() {
+		ret[idx] = b
+	}
+	return ret
 }
 
 func (bucket *Bucket) Print() {
