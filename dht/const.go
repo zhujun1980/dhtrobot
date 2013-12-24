@@ -32,7 +32,7 @@ const (
 const DSN = "root:123456@tcp(localhost:3306)/dhtrobot?charset=utf8"
 
 const (
-	NODENUM = 10
+	NODENUM = 100
 )
 
 const (

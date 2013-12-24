@@ -160,9 +160,16 @@ func (encode *KRPC) Decode(message string, raddr *net.UDPAddr) (*KRPCMessage, er
 	if err := bencode.DecodeString(message, &val); err != nil {
 		return nil, err
 	} else {
+		var ok bool
 		message := new(KRPCMessage)
-		message.T = val["t"].(string)
-		message.Y = val["y"].(string)
+		message.T, ok = val["t"].(string)
+		if !ok {
+			return nil, nil
+		}
+		message.Y, ok = val["y"].(string)
+		if !ok {
+			return nil, nil
+		}
 		message.Addr = raddr
 		switch message.Y {
 		case "q": //query recv from other node

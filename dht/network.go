@@ -52,7 +52,7 @@ func (nw *Network) NetListening() {
 		}
 		nw.ownNode.Log.Printf("New message, %d bytes, from %s", nread, raddr)
 		msg, err := nw.ownNode.krpc.Decode(string(data), raddr)
-		if err != nil {
+		if msg == nil || err != nil {
 			nw.ownNode.Log.Printf("Decoding error, %s", err)
 		} else {
 			nw.broker.PublishNewMessage(msg)
