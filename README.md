@@ -1,6 +1,6 @@
 DHTROBOT
 =======
-使用Go实现的BT分布式哈希表爬虫，现在仅实现了FIND_NODE消息，不断完善中
+使用Go实现的BT分布式哈希表爬虫
 
 ###DHT
 DHT，分布式哈希表，它是一种去中心化的key-value存储系统。它没有中央服务器，所有的数据都分散的存储在网络中的各个节点(Node)上。在文件分享领域，它主要用来保存网络上各个节点的连接信息和资源位置信息。目前几乎所有的P2P工具都支持DHT，避免对于Tracker服务器的依赖。
@@ -15,16 +15,21 @@ Node ID有160 bits，所以有2<sup>160</sup>个地址。Kademlia把地址分为
 具体细节请参考下面的引用
 
 ###DHTROBOT
-DHTROBOT就是实现Kademlia协议，让自己成为Node加入DHT网络，从上面分析请求并记录在mysql中。
+DHTROBOT就是实现Kademlia协议，让自己成为Node加入DHT网络，从上面分析请求并记录在mysql中。接受到Announce_Peer消息保存下来
 
 ###Why Go?
 DHT的爬虫有很多人已经实现过，有点用erlang，有的用python。我写这个程序目的是想学习Go。它非常好用，编译很快，库比较完善，尤其是goroutine。
 
+###依赖
+    go get github.com/zeebo/bencode
+
 ###References
-1. <http://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf> 
+1. <http://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf>
 2. <http://www.bittorrent.org/beps/bep_0005.html>
 3. <https://en.wikipedia.org/wiki/Kademlia>
 4. <http://codemacro.com/2013/05/19/crawl-dht/>
 5. <http://wenku.baidu.com/view/022f4552ad02de80d4d84062.html>
 6. <http://wenku.baidu.com/view/ee91580216fc700abb68fcae.html>
 7. <http://blog.csdn.net/tsingmei/article/details/2924368>
+8. <http://blog.csdn.net/xxxxxx91116/article/details/8549454>
+9. <http://www.bittorrent.org/beps/bep_0009.html>
