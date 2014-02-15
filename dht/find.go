@@ -85,7 +85,7 @@ func (sr *SearchResult) IsCloseEnough() bool {
 	if b {
 		j := 0
 		for _, v := range sr.results.NIS {
-			if j == K * 2 {
+			if j == K*2 {
 				break
 			}
 			if flag, ok := sr.visited[v.ID.HexString()]; ok && flag == 0 {

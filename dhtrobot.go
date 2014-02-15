@@ -16,7 +16,7 @@ func main() {
 
 	master := make(chan string)
 	logger := os.Stdout
-	mlogger, err := os.OpenFile("msg", os.O_APPEND | os.O_CREATE | os.O_RDWR, 0744)
+	mlogger, err := os.OpenFile("msg", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0744)
 	if err != nil {
 		panic(err)
 		return
@@ -30,7 +30,7 @@ func main() {
 		}
 	}
 
-	for i := 0; i < dht.NODENUM - len(ids); i++ {
+	for i := 0; i < dht.NODENUM-len(ids); i++ {
 		go func() {
 			node := dht.NewNode(dht.GenerateID(), logger, mlogger, master)
 			node.Run()

@@ -1,10 +1,10 @@
 package dht
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/base64"
 	_ "github.com/go-sql-driver/mysql"
-	"bytes"
 )
 
 const (

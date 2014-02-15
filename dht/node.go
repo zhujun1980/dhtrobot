@@ -26,7 +26,7 @@ func NewNode(id Identifier, logger io.Writer, mlogger io.Writer, master chan str
 	n := new(Node)
 	n.Info.ID = id
 	n.Log = log.New(logger, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
-	n.MLog = log.New(mlogger, id.HexString() + " ", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
+	n.MLog = log.New(mlogger, id.HexString()+" ", log.Ldate|log.Ltime|log.Lmicroseconds|log.Lshortfile)
 	n.NewMsg = make(chan *KRPCMessage)
 	n.Routing = NewRouting(n)
 	n.krpc = NewKRPC(n)

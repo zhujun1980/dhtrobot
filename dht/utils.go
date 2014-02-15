@@ -58,13 +58,3 @@ func bimid(max, min *big.Int) *big.Int {
 func biadd(x, y *big.Int) *big.Int {
 	return big.NewInt(0).Add(x, y)
 }
-
-
-
-
-
-
-
-
-
-

@@ -5,10 +5,10 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"strconv"
 	"time"
-	"math/rand"
 )
 
 type Identifier []byte
@@ -80,7 +80,7 @@ func BucketIndex(src, dst Identifier) int {
 	for ; xor != 0; xor >>= 1 {
 		j++
 	}
-	return 8 * i + (8 - j)
+	return 8*i + (8 - j)
 }
 
 type NodeInfo struct {

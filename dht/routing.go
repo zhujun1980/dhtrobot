@@ -8,8 +8,8 @@ import (
 	"io"
 	"log"
 	"math/big"
-	"time"
 	"math/rand"
+	"time"
 )
 
 type Bucket struct {
