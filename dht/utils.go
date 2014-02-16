@@ -14,10 +14,10 @@ func FanInRequests(rs []*Request, t time.Duration) chan *Request {
 			select {
 			case s := <-r.ch:
 				ch <- s
-				r.Node.Log.Printf("Response #%s return", r.Tid)
+				//r.Node.Log.Printf("Response #%s return", r.Tid)
 				return
 			case <-time.After(t):
-				r.Node.Log.Printf("Wait timeout #%s", r.Tid)
+				//r.Node.Log.Printf("Wait timeout #%s", r.Tid)
 				ch <- nil
 				return
 			}

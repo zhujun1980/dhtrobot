@@ -22,5 +22,6 @@ func (node *Node) GenToken(sender *NodeInfo) string {
 	tv.create = time.Now()
 	tv.node = sender
 	node.tokens[token] = tv
+
 	return token
 }
