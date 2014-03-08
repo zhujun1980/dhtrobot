@@ -29,7 +29,7 @@ const (
 )
 
 //username:password@protocol(address)/dbname?param=value
-const DSN = "root:123456@tcp(localhost:3306)/dhtrobot?charset=utf8"
+const DSN = "root:123456@unix(/opt/local/var/run/mysql55/mysqld.sock)/dhtrobot?charset=utf8"
 
 const (
 	NODENUM = 100
