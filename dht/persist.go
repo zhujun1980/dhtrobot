@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	UPTNODE = "REPLACE INTO nodes(nodeid, routing, utime) VALUES(?, ?, CURRENT_TIMESTAMP)"
-	ALLNODE = "SELECT nodeid FROM nodes"
-	SELNODE = "SELECT routing FROM nodes WHERE nodeid = ?"
+	UPTNODE = "REPLACE INTO Nodes(nodeid, routing, utime) VALUES(?, ?, CURRENT_TIMESTAMP)"
+	ALLNODE = "SELECT nodeid FROM Nodes"
+	SELNODE = "SELECT routing FROM Nodes WHERE nodeid = ?"
 
 	ADDRESU = "REPLACE INTO Resources(infohash) VALUES(?)"
 	ADDPEER = "INSERT INTO Peers(infohash, peers) VALUES(?, ?)"
