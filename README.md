@@ -21,7 +21,8 @@ DHTROBOT就是实现Kademlia协议，让自己成为Node加入DHT网络，从上
 DHT的爬虫有很多人已经实现过，有点用erlang，有的用python。我写这个程序目的是想学习Go。它非常好用，编译很快，库比较完善，尤其是goroutine。
 
 ###依赖
-    go get github.com/zeebo/bencode
+    > go get github.com/zeebo/bencode
+    > go get github.com/go-sql-driver/mysql
 
 ###ChangeLog
 
