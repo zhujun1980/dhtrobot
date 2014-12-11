@@ -25,7 +25,7 @@ DHT的爬虫有很多人已经实现过，有点用erlang，有的用python。�
 
 ###ChangeLog
 
-_**[2014-12-11]**_  Use sqlite save search result, install method:
+_**[2014-12-11]**_  Use sqlite store the search results:
 
 ~~~
 > go get github.com/mattn/go-sqlite3
