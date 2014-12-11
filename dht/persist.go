@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -29,7 +30,7 @@ func GetPersist() *Persist {
 		var err error
 		GPersist = new(Persist)
 
-		GPersist.db, err = sql.Open("mysql", DSN)
+		GPersist.db, err = sql.Open(DBTYPE, DSN)
 		if err != nil {
 			panic(err)
 		}

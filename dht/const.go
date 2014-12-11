@@ -28,8 +28,12 @@ const (
 	BAD            = iota
 )
 
+const DBTYPE = "sqlite3" //[mysql | sqlite3]
+const DSN = "dhtrobot.db"
+
 //username:password@protocol(address)/dbname?param=value
-const DSN = "root:123456@unix(/opt/local/var/run/mysql55/mysqld.sock)/dhtrobot?charset=utf8"
+//const DBTYPE = "mysql" //[mysql | sqlite3]
+//const DSN = "root:123456@unix(/opt/local/var/run/mysql55/mysqld.sock)/dhtrobot?charset=utf8"
 
 const (
 	NODENUM = 100
