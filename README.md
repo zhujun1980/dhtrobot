@@ -23,6 +23,16 @@ DHT的爬虫有很多人已经实现过，有点用erlang，有的用python。�
 ###依赖
     go get github.com/zeebo/bencode
 
+###ChangeLog
+
+_**[2014-12-11]**_  Use sqlite save search result, install method:
+
+~~~
+> go get github.com/mattn/go-sqlite3
+> sqlite3 dhtrobot.db 
+create tables.....
+~~~
+
 ###References
 1. <http://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf>
 2. <http://www.bittorrent.org/beps/bep_0005.html>
