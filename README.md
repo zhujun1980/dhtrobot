@@ -23,7 +23,7 @@ A debug tool for dhtrobot
 ./dhtrobot -client
 
 DHTRobot 0.1.0, Type 'help' show help page
-Local node ID: 0531d77af1bfa4b701d83098c601291fa5e201bc
+Local node ID: 8222e4b39b57cd88524d0ef54f9886beb2155789
 [1] >>> connect c1 ip port
 
 [2] >>> ping c1
