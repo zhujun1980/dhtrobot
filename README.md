@@ -1,7 +1,7 @@
-DHTROBOT
+DHTRobot
 =======
 
-a kademila DHT implement in go
+A kademila DHT implement in go
 
 ## Install
 
@@ -9,16 +9,21 @@ a kademila DHT implement in go
 CGO_LDFLAGS="-L{Path to libreadline & libhistory}" go build github.com/zhujun1980/dhtrobot
 ~~~
 
+## Run
+
+~~~
+./dhtrobot
+~~~
+
 ## Client mode
 
-A debug tool for kademila dht 
+A debug tool for dhtrobot
 
 ~~~
 ./dhtrobot -client
-~~~
 
-~~~
-
+DHTRobot 0.1.0, Type 'help' show help page
+Local node ID: 0531d77af1bfa4b701d83098c601291fa5e201bc
 [1] >>> connect c1 ip port
 
 [2] >>> ping c1
