@@ -1,40 +1,48 @@
 DHTROBOT
 =======
-使用Go实现的BT分布式哈希表爬虫
 
-###DHT
-DHT，分布式哈希表，它是一种去中心化的key-value存储系统。它没有中央服务器，所有的数据都分散的存储在网络中的各个节点(Node)上。在文件分享领域，它主要用来保存网络上各个节点的连接信息和资源位置信息。目前几乎所有的P2P工具都支持DHT，避免对于Tracker服务器的依赖。
+a kademila DHT implement in go
 
-###Kademlia算法
-DHT有很多实现方案，比如Chord, Pastry和Kademlia。其中在P2P领域中应用最广泛的是Kademlia。大部分工具都是基于Kademlia实现的DHT。
-
-Kademlia中支持DHT协议的网络应用程序称为`Node`。每个Node有个Node ID，它是个160 bits的串，其实就是一个SHA1的哈希值。Kademlia使用Node ID之间的异或值（XOR）来确定节点间的*距离*。注意这个距离不是说两个节点间的物理距离，也不是它们之间的IP跳数，而仅仅是逻辑上的距离。Kademlia协议本质上使得每个节点仅可能的保存自己*邻居*的信息。
-
-Node ID有160 bits，所以有2<sup>160</sup>个地址。Kademlia把地址分为160个桶，对于0 <= i < 160来说，每个桶保存与当前Node距离是 [2<sup>i</sup>, 2<sup>i+1</sup>)范围内的节点信息。这样在查询某个节点时能够很快定位到它所在的区间。注意真正的要查询的节点未必在网络上，但是只要能查到它附近的节点，就能获得对应的信息，因为Kademlia使节点对于自己的邻居最熟悉。
-
-具体细节请参考下面的引用
-
-###DHTROBOT
-DHTROBOT就是实现Kademlia协议，让自己成为Node加入DHT网络，从上面分析请求并记录在mysql中。接受到Announce_Peer消息保存下来
-
-###Why Go?
-DHT的爬虫有很多人已经实现过，有点用erlang，有的用python。我写这个程序目的是想学习Go。它非常好用，编译很快，库比较完善，尤其是goroutine。
-
-###依赖
-    > go get github.com/zeebo/bencode
-    > go get github.com/go-sql-driver/mysql
-
-###ChangeLog
-
-_**[2014-12-11]**_  Use sqlite store the search results:
+## Install
 
 ~~~
-> go get github.com/mattn/go-sqlite3
-> sqlite3 dhtrobot.db 
-create tables.....
+CGO_LDFLAGS="-L{Path to libreadline & libhistory}" go build github.com/zhujun1980/dhtrobot
 ~~~
 
-###References
+## Client mode
+
+A debug tool for kademila dht 
+
+~~~
+./dhtrobot -client
+~~~
+
+~~~
+
+[1] >>> connect c1 ip port
+
+[2] >>> ping c1
+--> Message T=0001, Y=q, V=, Q=ping, ID=8222e4b39b57cd88524d0ef54f9886beb2155789, SendNode(ID=, Addr=, Status=0)
+--> Packet-Sent: bytes=56, waiting for response (5s timeout)
+<-- Packet-received: bytes=47 from=127.0.0.1:58527
+<-- Message T=0001, Y=r, V=, Q=ping, ID=b4cfafee49b5ce879da9e2feff23a8755209017f, SendNode(ID=b4cfafee49b5ce879da9e2feff23a8755209017f, Addr=127.0.0.1:58527, Status=0)
+
+[3] >>> find c1 a3abdd68d8c3e2045fd8eab997e8bfa27f287e81
+--> Message T=0004, Y=q, V=, Q=find_node, ID=8222e4b39b57cd88524d0ef54f9886beb2155789, Target=a3abdd68d8c3e2045fd8eab997e8bfa27f287e81, SendNode(ID=, Addr=, Status=0)
+--> Packet-Sent: bytes=92, waiting for response (5s timeout)
+<-- Packet-received: bytes=162 from=127.0.0.1:58527
+<-- Message T=0004, Y=r, V=, Q=find_node, ID=b4cfafee49b5ce879da9e2feff23a8755209017f, Length=4, Nodes=[<0, ID=a3abdd68d8c3e2045fd8eab997e8bfa27f287e84, Addr=184.218.148.119:12745>; <1, ID=a72c7a80fcafd96cdcc7e6005bdceebd93ecbba6, Addr=162.234.63.121:6698>; <2, ID=a0dbc0e1075cdbe9ba94ebbca17c2b7d87fba8de, Addr=178.200.12.219:29313>; <3, ID=a4ffacda6fdfc4e50358dfedbe90efb8a5782f79, Addr=172.236.64.75:15107>], SendNode(ID=b4cfafee49b5ce879da9e2feff23a8755209017f, Addr=127.0.0.1:58527, Status=0)
+4 nodes received
+0 ID=a3abdd68d8c3e2045fd8eab997e8bfa27f287e84, Addr=184.218.148.119:12745, Status=0, Distance=3, Distance=158
+1 ID=a72c7a80fcafd96cdcc7e6005bdceebd93ecbba6, Addr=162.234.63.121:6698, Status=0, Distance=155, Distance=158
+2 ID=a0dbc0e1075cdbe9ba94ebbca17c2b7d87fba8de, Addr=178.200.12.219:29313, Status=0, Distance=154, Distance=158
+3 ID=a4ffacda6fdfc4e50358dfedbe90efb8a5782f79, Addr=172.236.64.75:15107, Status=0, Distance=155, Distance=158
+
+~~~
+
+
+## References
+
 1. <http://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf>
 2. <http://www.bittorrent.org/beps/bep_0005.html>
 3. <https://en.wikipedia.org/wiki/Kademlia>
