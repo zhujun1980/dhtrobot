@@ -1,7 +1,7 @@
 DHTRobot
 =======
 
-A kademila DHT implement in go
+A kademila DHT implementation in go
 
 ## Install
 
