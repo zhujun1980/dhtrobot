@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
+	"math/big"
 	"math/rand"
 	"net"
 	"strconv"
@@ -26,6 +27,12 @@ func (id NodeID) String() string {
 
 func (id NodeID) HexString() string {
 	return fmt.Sprintf("%x", id)
+}
+
+func (id NodeID) Int() *big.Int {
+	i := big.NewInt(0)
+	i.SetBytes(id)
+	return i
 }
 
 func HexToID(hex string) NodeID {

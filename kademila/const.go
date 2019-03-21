@@ -36,6 +36,8 @@ const FindNodeTimeLimit = 120 // In seconds
 
 const TokenTimeLimit = 300 // 5 minutes
 
+const RefreshnessTimeLimit = 5
+
 const MaxUnchangedCount = 5000
 
 const MaxBitsLength = 160

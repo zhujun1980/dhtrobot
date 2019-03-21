@@ -11,7 +11,7 @@ import (
 type Kademila struct {
 	Chan    chan string
 	ctx     context.Context
-	routing *Routing
+	routing *table
 	finder  *Finder
 	token   *TokenBuilder
 }
@@ -42,10 +42,7 @@ func New(ctx context.Context, master chan string, logger *logrus.Logger) (*Kadem
 
 	k.ctx = NewContext(ctx, c)
 	k.Chan = make(chan string)
-	k.routing, err = NewRouting(k.ctx)
-	if err != nil {
-		return nil, err
-	}
+	k.routing = newTable(k.ctx)
 	k.finder, err = NewFinder(k.routing, k.ctx)
 	if err != nil {
 		return nil, err
@@ -113,43 +110,25 @@ func (k *Kademila) transition() {
 }
 
 func (k *Kademila) processQuery(m *Message) error {
+	var out *Message
 	c, _ := FromContext(k.ctx)
 
 	switch m.Q {
 	case "ping":
-		out := KRPCNewPingResponse(m.T, c.Local.ID)
-		out.N = m.N
-		c.Outgoing <- out
+		out = KRPCNewPingResponse(m.T, c.Local.ID)
 	case "find_node":
-		var out *Message
 		q := m.A.(*FindNodeQuery)
-		nodes, err := k.routing.FindNode(q.Target)
-		if err != nil {
-			out = KRPCNewError(m.T, m.Q, ServerError)
-			c.Log.WithFields(logrus.Fields{
-				"err": err,
-			}).Error("FindNode failed")
-		} else {
-			out = KRPCNewFindNodeResponse(m.T, c.Local.ID, nodes)
-		}
-		out.N = m.N
-		c.Outgoing <- out
+		nodes := k.routing.findNode(q.Target)
+		out = KRPCNewFindNodeResponse(m.T, c.Local.ID, nodes)
 	case "get_peers":
-		var out *Message
 		q := m.A.(*GetPeersQuery)
-		nodes, err := k.routing.FindNode(q.InfoHash)
-		if err != nil {
-			out = KRPCNewError(m.T, m.Q, ServerError)
-			c.Log.WithFields(logrus.Fields{
-				"err": err,
-			}).Error("FindNode failed")
-		} else {
-			out = KRPCNewGetPeersResponse(m.T, c.Local.ID, k.token.create(m.N.Addr.String()), nodes, []*Peer{})
-		}
-		out.N = m.N
-		c.Outgoing <- out
+		nodes := k.routing.findNode(q.InfoHash)
+		out = KRPCNewGetPeersResponse(m.T, c.Local.ID, k.token.create(m.N.Addr.String()), nodes, []*Peer{})
 	case "announce_peer":
 	}
+
+	out.N = m.N
+	c.Outgoing <- out
 	return nil
 }
 

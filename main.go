@@ -10,14 +10,6 @@ import (
 	"github.com/zhujun1980/dhtrobot/kademila"
 )
 
-/*
-TODO
-	NAT
-	Libtorrent 不使用 target 和 infohash
-	routing table 刷新
-	routing table 保存
-*/
-
 func initLogger() *logrus.Logger {
 	var log = logrus.New()
 	log.Formatter = &logrus.TextFormatter{

@@ -46,14 +46,14 @@ type PingResponse struct {
 
 type FindNodeResponse struct {
 	ID    string
-	Nodes []*Node
+	Nodes []Node
 }
 
 type GetPeersResponse struct {
 	ID     string
 	Token  string
 	Values []*Peer
-	Nodes  []*Node
+	Nodes  []Node
 }
 
 type AnnouncePeerResponse struct {
@@ -234,7 +234,7 @@ func convertIPPort(buf *bytes.Buffer, ip net.IP, port int) {
 	buf.Write(bs)
 }
 
-func ConvertNodeToBytes(nodes []*Node) []byte {
+func ConvertNodeToBytes(nodes []Node) []byte {
 	buf := bytes.NewBuffer(nil)
 	for _, v := range nodes {
 		buf.Write(v.ID)
@@ -254,21 +254,20 @@ func ConvertPeerToBytes(peers []*Peer) []string {
 	return ret
 }
 
-func ParseNodes(sn string) []*Node {
+func ParseNodes(sn string) []Node {
 	data := []byte(sn)
-	var nodes []*Node
+	var nodes []Node
 	for j := 0; j < len(data); j = j + 26 {
 		if j+26 > len(data) {
 			break
 		}
 		kn := data[j : j+26]
-		node := new(Node)
-		node.ID = NodeID(kn[0:20])
+		ID := NodeID(kn[0:20])
 		IP := kn[20:24]
 		port := kn[24:26]
 		Port := int(port[0])<<8 + int(port[1])
-		node.Addr = &net.UDPAddr{IP: IP, Port: Port}
-		nodes = append(nodes, node)
+		Addr := &net.UDPAddr{IP: IP, Port: Port}
+		nodes = append(nodes, Node{ID, Addr, INIT})
 	}
 	return nodes
 }
@@ -566,7 +565,7 @@ func KRPCNewFindNode(local NodeID, target NodeID) *Message {
 	return m
 }
 
-func KRPCNewFindNodeResponse(tid string, local NodeID, nodes []*Node) *Message {
+func KRPCNewFindNodeResponse(tid string, local NodeID, nodes []Node) *Message {
 	m := new(Message)
 	m.T = tid
 	m.Y = "r"
@@ -589,7 +588,7 @@ func KRPCNewGetPeers(local NodeID, infoHash NodeID) *Message {
 	return m
 }
 
-func KRPCNewGetPeersResponse(tid string, local NodeID, token string, nodes []*Node, values []*Peer) *Message {
+func KRPCNewGetPeersResponse(tid string, local NodeID, token string, nodes []Node, values []*Peer) *Message {
 	m := new(Message)
 	m.T = tid
 	m.Y = "r"
@@ -714,7 +713,7 @@ func KRPCEncodeFindNode(tid string, local string, target string) (string, error)
 	return s, err
 }
 
-func KRPCEncodeFindNodeResponse(tid string, local string, nodes []*Node) (string, error) {
+func KRPCEncodeFindNodeResponse(tid string, local string, nodes []Node) (string, error) {
 	v := make(map[string]interface{})
 	v["t"] = tid
 	v["y"] = "r"
@@ -739,7 +738,7 @@ func KRPCEncodeGetPeers(tid string, local string, infoHash string) (string, erro
 	return s, err
 }
 
-func KRPCEncodeGetPeersResponse(tid string, local string, token string, nodes []*Node, values []*Peer) (string, error) {
+func KRPCEncodeGetPeersResponse(tid string, local string, token string, nodes []Node, values []*Peer) (string, error) {
 	v := make(map[string]interface{})
 	v["t"] = tid
 	v["y"] = "r"

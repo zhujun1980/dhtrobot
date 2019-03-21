@@ -12,12 +12,12 @@ import (
 type Finder struct {
 	Chan    chan *Message
 	ctx     context.Context
-	routing *Routing
+	routing *table
 	Working atomic.Value
 	Status  atomic.Value
 }
 
-func NewFinder(routing *Routing, ctx context.Context) (*Finder, error) {
+func NewFinder(routing *table, ctx context.Context) (*Finder, error) {
 	f := new(Finder)
 	f.routing = routing
 	f.ctx = ctx
@@ -34,7 +34,7 @@ func (f *Finder) Forward(m *Message) {
 func (f *Finder) Bootstrap() {
 	c, _ := FromContext(f.ctx)
 
-	var startNodes []Node
+	var startNodes []*Node
 	for _, host := range BOOTSTRAP {
 		raddr, err := net.ResolveUDPAddr("udp", host)
 		if err != nil {
@@ -43,7 +43,7 @@ func (f *Finder) Bootstrap() {
 			}).Error("Resolve DNS error")
 			continue
 		}
-		startNodes = append(startNodes, Node{Addr: raddr})
+		startNodes = append(startNodes, &Node{Addr: raddr})
 		c.Log.WithFields(logrus.Fields{
 			"Host": host,
 			"IP":   raddr.IP,
@@ -53,7 +53,7 @@ func (f *Finder) Bootstrap() {
 	f.FindNodes(c.Local.ID, startNodes)
 }
 
-func (f *Finder) FindNodes(target NodeID, queriedNodes []Node) error {
+func (f *Finder) FindNodes(target NodeID, queriedNodes []*Node) error {
 	c, _ := FromContext(f.ctx)
 
 	f.Working.Store(true)
@@ -62,7 +62,7 @@ func (f *Finder) FindNodes(target NodeID, queriedNodes []Node) error {
 
 	for _, v := range queriedNodes {
 		m := KRPCNewFindNode(c.Local.ID, target)
-		m.N = v
+		m.N = *v
 		c.Outgoing <- m
 	}
 	allnodes := make(map[string]*Node)
@@ -105,15 +105,15 @@ func (f *Finder) FindNodes(target NodeID, queriedNodes []Node) error {
 				f.Status.Store(Suspend)
 				c.Log.Infof("FindNode finished, exceeds max count %d", MaxUnchangedCount)
 			} else {
-				for _, v := range response.Nodes {
-					if v.Port() <= 0 && net.IP(v.IP()).IsUnspecified() {
+				for idx := range response.Nodes {
+					if response.Nodes[idx].Port() <= 0 && net.IP(response.Nodes[idx].IP()).IsUnspecified() {
 						continue
 					}
-					_, ok = allnodes[v.ID.String()]
+					_, ok = allnodes[response.Nodes[idx].ID.String()]
 					if !ok {
-						allnodes[v.ID.String()] = v
+						allnodes[response.Nodes[idx].ID.String()] = &response.Nodes[idx]
 						m := KRPCNewFindNode(c.Local.ID, target)
-						m.N = *v
+						m.N = response.Nodes[idx]
 						c.Outgoing <- m
 					}
 				}
@@ -145,7 +145,7 @@ func (f *Finder) FindNodes(target NodeID, queriedNodes []Node) error {
 	for _, v := range allnodes {
 		if v.Status == GOOD {
 			good++
-			f.routing.AddNode(v)
+			f.routing.addNode(v)
 		}
 	}
 	c.Log.Infof("FindNode, got %d nodes, %d good nodes", len(allnodes), good)
