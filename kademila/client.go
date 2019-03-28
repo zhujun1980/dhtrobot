@@ -298,7 +298,7 @@ var lexers = []lexer{
 	{"^help$", tkCmdHelp, nil},
 	{"^[0-9]+$", tkNUMBER, nil},
 	{"^[0-9A-Fa-f]{40}$", tkNODEID, nil},
-	{"^[A-Za-z_][[:word:]]$", tkID, nil},
+	{"^[A-Za-z_][[:word:]]*$", tkID, nil},
 	{"^[^\t\n\f\r ]+$", tkSTRING, nil},
 }
 

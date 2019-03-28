@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"sort"
 	"sync"
 	"time"
@@ -26,6 +27,13 @@ func newBucket(ctx context.Context, min, max *big.Int) *bucket {
 	b.nodes = make([]Node, 0, K)
 	b.lastUpdated = time.Now()
 	return b
+}
+
+func (b *bucket) generateRandomID() NodeID {
+	d := big.NewInt(0).Sub(b.max, b.min)
+	random := rand.New(rand.NewSource(time.Now().UnixNano()))
+	z := big.NewInt(0).Add(b.min, d.Rand(random, d))
+	return z.Bytes()
 }
 
 func (b *bucket) compare(val *big.Int) int {
@@ -51,8 +59,12 @@ func (b *bucket) getInsertPosition(newnode *big.Int) int {
 func (b *bucket) addNode(newnode *Node) {
 	i := b.getInsertPosition(newnode.ID.Int())
 	if i < len(b.nodes) && b.nodes[i].ID.Int().Cmp(newnode.ID.Int()) == 0 {
+		b.nodes[i].LastSeen = time.Now()
+		b.nodes[i].Status = GOOD
 		return
 	}
+	newnode.LastSeen = time.Now()
+	newnode.Status = GOOD
 	if i < len(b.nodes) {
 		b.nodes = append(b.nodes, Node{})
 		copy(b.nodes[i+1:], b.nodes[i:])
@@ -60,6 +72,7 @@ func (b *bucket) addNode(newnode *Node) {
 	} else {
 		b.nodes = append(b.nodes, *newnode)
 	}
+	b.lastUpdated = time.Now()
 }
 
 func (b *bucket) split() *bucket {
@@ -105,7 +118,7 @@ type table struct {
 }
 
 func newTable(ctx context.Context) *table {
-	c, _ := FromContext(ctx)
+	//c, _ := FromContext(ctx)
 
 	t := new(table)
 	t.ctx = ctx
@@ -115,12 +128,15 @@ func newTable(ctx context.Context) *table {
 	max := big.NewInt(1)
 	max.Lsh(max, MaxBitsLength)
 	t.buckets = append(t.buckets, newBucket(ctx, min, max))
-	t.addNode(&c.Local)
+	//t.addNode(&c.Local)
 	return t
 }
 
 func (t *table) addNode(newnode *Node) {
 	c, _ := FromContext(t.ctx)
+
+	t.lock.Lock()
+	defer t.lock.Unlock()
 
 	k := newnode.ID.Int()
 	idx := t.searchBucket(k)
@@ -164,6 +180,8 @@ func (t *table) String() string {
 }
 
 func (t *table) findNode(target string) []Node {
+	t.lock.Lock()
+	defer t.lock.Unlock()
 	i := big.NewInt(0)
 	i.SetBytes([]byte(target))
 	idx := t.searchBucket(i)

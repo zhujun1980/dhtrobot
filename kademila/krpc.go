@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"reflect"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/zeebo/bencode"
 )
@@ -173,30 +173,25 @@ func (m *Message) String() string {
 			}
 		}
 	}
-	ver := m.V
-	if len(m.V) == 4 {
-		ver = m.V[0:2] + fmt.Sprintf("(%x)", m.V[2:])
-	}
+	ver := formatVersion(m.V)
 	return fmt.Sprintf("Message T=%x, Y=%s, V=%s, Q=%s, %s, SendNode(%s)",
 		m.T, m.Y, ver, m.Q, additional, m.N)
 }
 
 type DecodeError struct {
-	When time.Time
 	What string
 }
 
 func (e DecodeError) Error() string {
-	return fmt.Sprintf("Decode error at %v, %s", e.When, e.What)
+	return fmt.Sprintf("Decode error: %s", e.What)
 }
 
 type EncodeError struct {
-	When time.Time
 	What string
 }
 
 func (e EncodeError) Error() string {
-	return fmt.Sprintf("Encode error at %v, %s", e.When, e.What)
+	return fmt.Sprintf("Encode error: %s", e.What)
 }
 
 var GenericError = 201
@@ -267,7 +262,7 @@ func ParseNodes(sn string) []Node {
 		port := kn[24:26]
 		Port := int(port[0])<<8 + int(port[1])
 		Addr := &net.UDPAddr{IP: IP, Port: Port}
-		nodes = append(nodes, Node{ID, Addr, INIT})
+		nodes = append(nodes, Node{ID: ID, Addr: Addr, Status: INIT})
 	}
 	return nodes
 }
@@ -277,7 +272,7 @@ func ParsePeers(peers []string) ([]*Peer, error) {
 	for _, peer := range peers {
 		data := []byte(peer)
 		if len(data) != 6 {
-			return nil, &DecodeError{time.Now(), "Protocol error: peer length would be 6 bytes, got " + strconv.Itoa(len(data))}
+			return nil, &DecodeError{"Protocol error: peer length would be 6 bytes, got " + strconv.Itoa(len(data))}
 		}
 		p := new(Peer)
 		p.IP = data[:4]
@@ -286,6 +281,24 @@ func ParsePeers(peers []string) ([]*Peer, error) {
 		ret = append(ret, p)
 	}
 	return ret, nil
+}
+
+func formatVersion(ver string) string {
+	if len(ver) > 1 {
+		v := ""
+		if len(ver) == 4 {
+			v = fmt.Sprintf("%s(%v.%v)", ver[0:2], ver[2], ver[3])
+		} else {
+			v = fmt.Sprintf("%s(%x)", ver[0:2], ver[2:])
+		}
+		return v
+	}
+	return ver
+}
+
+func validateClient(ver string) bool {
+	_, found := FilteredClients[formatVersion(ver)]
+	return !found
 }
 
 func decodeQuery(q string, addition map[string]interface{}, m *Message) (interface{}, error) {
@@ -355,10 +368,10 @@ func decodeQuery(q string, addition map[string]interface{}, m *Message) (interfa
 		m.N.ID = []byte(payload.ID)
 		ret = payload
 	default:
-		return nil, &DecodeError{time.Now(), "Unknown method: " + q}
+		return nil, &DecodeError{"Unknown method: " + q}
 	}
 	if !ok {
-		return nil, &DecodeError{time.Now(), "Protocol error: " + q}
+		return nil, &DecodeError{"Protocol error: " + q}
 	}
 	return ret, nil
 }
@@ -430,9 +443,15 @@ func decodeResponse(q string, addition map[string]interface{}, m *Message) (inte
 		ret = payload
 	}
 	if !ok {
-		return nil, &DecodeError{time.Now(), "Protocol error: " + q}
+		return nil, &DecodeError{"Protocol error: " + q}
 	}
 	return ret, nil
+}
+
+func KRPCValidate(data []byte) bool {
+	val := make(map[string]interface{})
+	err := bencode.DecodeBytes(data, &val)
+	return (err == nil)
 }
 
 func KRPCDecode(raw *RawData) (*Message, error) {
@@ -440,19 +459,19 @@ func KRPCDecode(raw *RawData) (*Message, error) {
 	var ok bool
 	var err error
 
-	if err = bencode.DecodeString(string(raw.Data), &val); err != nil {
-		return nil, err
+	if err = bencode.DecodeBytes(raw.Data, &val); err != nil {
+		return nil, &DecodeError{fmt.Sprintf("bencode error: %s, %s, %d", err.Error(), string(raw.Data), len(raw.Data))}
 	}
 
 	m := new(Message)
 	m.N.Addr = raw.Addr
 	m.T, ok = val["t"].(string)
 	if !ok {
-		return nil, &DecodeError{time.Now(), "Protocol error: Empty `t` field"}
+		return nil, &DecodeError{"Protocol error: Empty `t` field"}
 	}
 	m.Y, ok = val["y"].(string)
 	if !ok {
-		return nil, &DecodeError{time.Now(), "Protocol error: Empty `y` field"}
+		return nil, &DecodeError{"Protocol error: Empty `y` field"}
 	}
 	m.V, ok = val["v"].(string)
 	if !ok {
@@ -462,12 +481,12 @@ func KRPCDecode(raw *RawData) (*Message, error) {
 	case "q":
 		m.Q, ok = val["q"].(string)
 		if !ok {
-			return nil, &DecodeError{time.Now(), "Protocol error: Empty query `q` field"}
+			return nil, &DecodeError{"Protocol error: Empty query `q` field"}
 		}
 		var addition map[string]interface{}
 		addition, ok = val["a"].(map[string]interface{})
 		if !ok {
-			return nil, &DecodeError{time.Now(), "Protocol error: Empty query `a` field"}
+			return nil, &DecodeError{"Protocol error: Empty query `a` field"}
 		}
 		m.A, err = decodeQuery(m.Q, addition, m)
 		if err != nil {
@@ -478,12 +497,12 @@ func KRPCDecode(raw *RawData) (*Message, error) {
 		defer lock.Unlock()
 		m.Q, ok = penddingRequests[m.T]
 		if !ok {
-			return nil, &DecodeError{time.Now(), "Unknown request"}
+			return nil, &DecodeError{"Unknown request"}
 		}
 		var addition map[string]interface{}
 		addition, ok = val["r"].(map[string]interface{})
 		if !ok {
-			return nil, &DecodeError{time.Now(), "Protocol error: Empty response `r` field"}
+			return nil, &DecodeError{"Protocol error: Empty response `r` field"}
 		}
 		m.A, err = decodeResponse(m.Q, addition, m)
 		if err != nil {
@@ -494,28 +513,32 @@ func KRPCDecode(raw *RawData) (*Message, error) {
 		defer lock.Unlock()
 		m.Q, ok = penddingRequests[m.T]
 		if !ok {
-			return nil, &DecodeError{time.Now(), "Unknown request"}
+			return nil, &DecodeError{"Unknown request"}
 		}
 		err := new(Err)
 		var decodeErr []interface{}
 		decodeErr, ok = val["e"].([]interface{})
 		if !ok {
-			return nil, &DecodeError{time.Now(), "Protocol error: Empty error `e` field"}
+			return nil, &DecodeError{"Protocol error: Empty error `e` field"}
 		}
 		if len(decodeErr) != 2 {
-			return nil, &DecodeError{time.Now(), "Protocol error: Error field length would be 2, got " + strconv.Itoa(len(decodeErr))}
+			return nil, &DecodeError{"Protocol error: Error field length would be 2, got " + strconv.Itoa(len(decodeErr))}
 		}
 		err.Code, ok = decodeErr[0].(int)
 		if !ok {
-			return nil, &DecodeError{time.Now(), "Protocol error: Invalid Error code type"}
+			c, ok := decodeErr[0].(int64)
+			if !ok {
+				return nil, &DecodeError{fmt.Sprintf("Protocol error: Invalid Error code type, dat = %v, %s, %s", decodeErr, reflect.TypeOf(decodeErr[0]), reflect.TypeOf(decodeErr[1]))}
+			}
+			err.Code = int(c)
 		}
 		err.Desc, ok = decodeErr[1].(string)
 		if !ok {
-			return nil, &DecodeError{time.Now(), "Protocol error: Invalid Error description type"}
+			return nil, &DecodeError{"Protocol error: Invalid Error description type"}
 		}
 		m.A = err
 	default:
-		return nil, &DecodeError{time.Now(), "Protocol error: Unknown `y` value " + m.Y}
+		return nil, &DecodeError{"Protocol error: Unknown `y` value " + m.Y}
 	}
 
 	return m, nil

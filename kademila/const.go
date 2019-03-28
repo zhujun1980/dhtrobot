@@ -34,10 +34,16 @@ const (
 
 const FindNodeTimeLimit = 120 // In seconds
 
-const TokenTimeLimit = 300 // 5 minutes
-
-const RefreshnessTimeLimit = 5
-
 const MaxUnchangedCount = 5000
 
+const TokenTimeLimit = 300 // 5 minutes
+
+const NodeRefreshnessTimeLimit = 15
+
+const BucketLastChangedTimeLimit = 15
+
 const MaxBitsLength = 160
+
+var FilteredClients = map[string]bool{
+	"LT(0.17)": true,
+}

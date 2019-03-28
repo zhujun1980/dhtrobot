@@ -10,18 +10,35 @@ import (
 )
 
 type Finder struct {
-	Chan    chan *Message
-	ctx     context.Context
-	routing *table
-	Working atomic.Value
-	Status  atomic.Value
+	Chan      chan *Message
+	ctx       context.Context
+	routing   *table
+	Working   atomic.Value
+	Status    atomic.Value
+	bootstrap []Node
 }
 
 func NewFinder(routing *table, ctx context.Context) (*Finder, error) {
+	c, _ := FromContext(ctx)
 	f := new(Finder)
 	f.routing = routing
 	f.ctx = ctx
 	f.Chan = make(chan *Message)
+	for _, host := range BOOTSTRAP {
+		raddr, err := net.ResolveUDPAddr("udp", host)
+		if err != nil {
+			c.Log.WithFields(logrus.Fields{
+				"err": err,
+			}).Error("Resolve DNS error")
+			continue
+		}
+		f.bootstrap = append(f.bootstrap, Node{Addr: raddr})
+		c.Log.WithFields(logrus.Fields{
+			"Host": host,
+			"IP":   raddr.IP,
+			"Port": raddr.Port,
+		}).Info("Bootstrap from")
+	}
 	return f, nil
 }
 
@@ -31,45 +48,57 @@ func (f *Finder) Forward(m *Message) {
 	}
 }
 
-func (f *Finder) Bootstrap() {
-	c, _ := FromContext(f.ctx)
+func (f *Finder) CheckTable() {
+	f.Working.Store(true)
 
-	var startNodes []*Node
-	for _, host := range BOOTSTRAP {
-		raddr, err := net.ResolveUDPAddr("udp", host)
-		if err != nil {
-			c.Log.WithFields(logrus.Fields{
-				"err": err,
-			}).Error("Resolve DNS error")
-			continue
+	go func() {
+		c, _ := FromContext(f.ctx)
+		now := time.Now()
+		defer f.Working.Store(false)
+		for i, b := range f.routing.buckets {
+			diff := now.Sub(b.lastUpdated)
+			if diff.Minutes() >= BucketLastChangedTimeLimit {
+				c.Log.Infof("Begin refresh bucket %d [%x, %x)", i, b.min.Bytes(), b.max.Bytes())
+				queriedNodes := make([]Node, len(f.bootstrap))
+				copy(queriedNodes, f.bootstrap)
+				for i := range b.nodes {
+					queriedNodes = append(queriedNodes, b.nodes[i])
+				}
+				b.nodes = make([]Node, 0, K)
+				f.FindNodes(b.generateRandomID(), queriedNodes)
+				return
+			}
 		}
-		startNodes = append(startNodes, &Node{Addr: raddr})
-		c.Log.WithFields(logrus.Fields{
-			"Host": host,
-			"IP":   raddr.IP,
-			"Port": raddr.Port,
-		}).Info("Bootstrap from")
-	}
-	f.FindNodes(c.Local.ID, startNodes)
+	}()
 }
 
-func (f *Finder) FindNodes(target NodeID, queriedNodes []*Node) error {
-	c, _ := FromContext(f.ctx)
-
+func (f *Finder) Bootstrap(target NodeID) {
 	f.Working.Store(true)
-	defer f.Working.Store(false)
-	f.Status.Store(Running)
 
-	for _, v := range queriedNodes {
-		m := KRPCNewFindNode(c.Local.ID, target)
-		m.N = *v
-		c.Outgoing <- m
-	}
+	go func() {
+		defer f.Working.Store(false)
+		f.FindNodes(target, f.bootstrap)
+	}()
+}
+
+func (f *Finder) FindNodes(target NodeID, queriedNodes []Node) error {
+	c, _ := FromContext(f.ctx)
 	allnodes := make(map[string]*Node)
+	f.Status.Store(Running)
+	for i := range queriedNodes {
+		m := KRPCNewFindNode(c.Local.ID, target)
+		m.N = queriedNodes[i]
+		c.Outgoing <- m
+		if len(queriedNodes[i].ID) > 0 {
+			allnodes[queriedNodes[i].ID.String()] = &queriedNodes[i]
+		}
+	}
 	minDistance := MaxBitsLength
 	cond := true
 	begin := time.Now()
 	unchanged := 0
+
+	c.Log.Infof("FindNode: %s", target.HexString())
 	for cond {
 		if f.Status.Load() == Finished {
 			break
@@ -86,17 +115,20 @@ func (f *Finder) FindNodes(target NodeID, queriedNodes []*Node) error {
 				}).Errorf("Incorrect msg, wants FindNode, got %s", msg.Q)
 				break
 			}
-			c.Log.Infof("Got %d new nodes, total nodes %d, distance %d, unchanged %d", len(response.Nodes), len(allnodes), minDistance, unchanged)
+			c.Log.Debugf("Got %d new nodes, total nodes %d, distance %d, unchanged %d", len(response.Nodes), len(allnodes), minDistance, unchanged)
 			unchanged++
 			node, ok := allnodes[response.ID]
 			if ok {
-				node.Status = GOOD
+				//c.Log.Infof("%s, v=%s", node, formatVersion(msg.V))
+				if validateClient(msg.V) {
+					node.Status = GOOD
+				}
 				distance := Distance(target, node.ID)
 				if distance < minDistance {
 					c.Log.WithFields(logrus.Fields{
 						"prev": minDistance,
 						"new":  distance,
-					}).Infof("Got closer node %s, current %s", node.ID.HexString(), target.HexString())
+					}).Debugf("Got closer node %s, current %s", node.ID.HexString(), target.HexString())
 					minDistance = distance
 					unchanged = 0
 				}
@@ -106,7 +138,7 @@ func (f *Finder) FindNodes(target NodeID, queriedNodes []*Node) error {
 				c.Log.Infof("FindNode finished, exceeds max count %d", MaxUnchangedCount)
 			} else {
 				for idx := range response.Nodes {
-					if response.Nodes[idx].Port() <= 0 && net.IP(response.Nodes[idx].IP()).IsUnspecified() {
+					if response.Nodes[idx].Port() <= 0 || net.IP(response.Nodes[idx].IP()).IsUnspecified() {
 						continue
 					}
 					_, ok = allnodes[response.Nodes[idx].ID.String()]
@@ -148,7 +180,7 @@ func (f *Finder) FindNodes(target NodeID, queriedNodes []*Node) error {
 			f.routing.addNode(v)
 		}
 	}
-	c.Log.Infof("FindNode, got %d nodes, %d good nodes", len(allnodes), good)
 	c.Log.Info(f.routing)
+	c.Log.Infof("FindNode finished, got %d nodes, %d good nodes", len(allnodes), good)
 	return nil
 }

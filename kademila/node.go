@@ -80,9 +80,10 @@ func Distance(src, dst NodeID) int {
 }
 
 type Node struct {
-	ID     NodeID
-	Addr   net.Addr
-	Status uint8
+	ID       NodeID
+	Addr     net.Addr
+	Status   uint8
+	LastSeen time.Time
 }
 
 func (node Node) IP() []byte {

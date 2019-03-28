@@ -16,7 +16,7 @@ func initLogger() *logrus.Logger {
 		FullTimestamp: true,
 	}
 	log.Out = os.Stderr
-	log.Level = logrus.DebugLevel
+	log.Level = logrus.InfoLevel
 	return log
 }
 

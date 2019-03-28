@@ -65,7 +65,7 @@ func (k *Kademila) mainLoop(bootstrap bool) {
 	c, _ := FromContext(k.ctx)
 
 	if bootstrap {
-		go func() { k.finder.Bootstrap() }()
+		k.finder.Bootstrap(c.Local.ID)
 	}
 	for {
 		select {
@@ -79,12 +79,9 @@ func (k *Kademila) mainLoop(bootstrap bool) {
 			if err != nil {
 				c.Log.WithFields(logrus.Fields{
 					"err": err,
-				}).Error("Encode failed")
+				}).Error("Decode failed")
 				break
 			}
-			c.Log.WithFields(logrus.Fields{
-				"m": msg.String(),
-			}).Debug("Encode success")
 			k.processMessage(msg)
 
 		case <-time.After(time.Second):
@@ -96,16 +93,13 @@ func (k *Kademila) mainLoop(bootstrap bool) {
 }
 
 func (k *Kademila) transition() {
-	c, _ := FromContext(k.ctx)
-
 	if k.finder.Working.Load() == true {
 		if k.finder.Status.Load() == Suspend {
 			k.finder.Status.Store(Finished)
-			c.Log.Info("Finder job finished")
 		}
 	} else {
+		k.finder.CheckTable()
 	}
-
 	k.token.renewToken()
 }
 
@@ -113,6 +107,9 @@ func (k *Kademila) processQuery(m *Message) error {
 	var out *Message
 	c, _ := FromContext(k.ctx)
 
+	c.Log.WithFields(logrus.Fields{
+		"m": m.String(),
+	}).Info("Request received:")
 	switch m.Q {
 	case "ping":
 		out = KRPCNewPingResponse(m.T, c.Local.ID)
@@ -126,14 +123,20 @@ func (k *Kademila) processQuery(m *Message) error {
 		out = KRPCNewGetPeersResponse(m.T, c.Local.ID, k.token.create(m.N.Addr.String()), nodes, []*Peer{})
 	case "announce_peer":
 	}
-
+	if validateClient(m.V) {
+		k.routing.addNode(&m.N)
+	}
 	out.N = m.N
 	c.Outgoing <- out
 	return nil
 }
 
 func (k *Kademila) processResponse(m *Message) error {
-	// c, _ := FromContext(k.ctx)
+	c, _ := FromContext(k.ctx)
+
+	c.Log.WithFields(logrus.Fields{
+		"m": m.String(),
+	}).Debug("Response received:")
 	switch m.Q {
 	case "ping":
 	case "find_node":
@@ -145,6 +148,10 @@ func (k *Kademila) processResponse(m *Message) error {
 }
 
 func (k *Kademila) processError(m *Message) error {
+	c, _ := FromContext(k.ctx)
+	c.Log.WithFields(logrus.Fields{
+		"m": m.String(),
+	}).Warn("Error received:")
 	return nil
 }
 
@@ -194,7 +201,9 @@ func (k *Kademila) outgoingLoop() {
 	for {
 		select {
 		case msg := <-c.Outgoing:
-			k.writeMessage(msg, msg.N.Addr)
+			if msg.N.Port() > 0 {
+				k.writeMessage(msg, msg.N.Addr)
+			}
 
 		case <-time.After(time.Second):
 			//c.Log.Debug("Outgoing Loop Timeout")
@@ -205,6 +214,7 @@ func (k *Kademila) outgoingLoop() {
 func (k *Kademila) incomingLoop() {
 	c, _ := FromContext(k.ctx)
 
+	buffer := make(map[string][]byte)
 	data := make([]byte, MAXSIZE)
 	for {
 		n, addr, err := c.Conn.ReadFrom(data)
@@ -218,7 +228,30 @@ func (k *Kademila) incomingLoop() {
 			"bytes": n,
 			"addr":  addr.String(),
 		}).Debug("Packet received")
-		c.Incoming <- RawData{addr, data[:n]}
+
+		if KRPCValidate(data[:n]) {
+			newdat := make([]byte, n)
+			copy(newdat, data[:n])
+			c.Incoming <- RawData{addr, newdat}
+		} else {
+			key := addr.String()
+			_, ok := buffer[key]
+			if !ok {
+				buffer[key] = make([]byte, n)
+				copy(buffer[key], data[:n])
+			} else {
+				cur := len(buffer[key])
+				newdat := make([]byte, cur+n)
+				copy(newdat, buffer[key])
+				copy(newdat[cur:], data[:n])
+				if KRPCValidate(newdat) {
+					c.Incoming <- RawData{addr, newdat}
+					delete(buffer, key)
+				} else {
+					buffer[key] = newdat
+				}
+			}
+		}
 	}
 }
 
