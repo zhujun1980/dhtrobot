@@ -301,59 +301,68 @@ func validateClient(ver string) bool {
 	return !found
 }
 
-func decodeQuery(q string, addition map[string]interface{}, m *Message) (interface{}, error) {
+func decodeQuery(q string, addition map[string]interface{}, m *Message) error {
 	var ok bool
-	var ret interface{}
+	var emsg string
 
 	switch q {
 	case "ping":
 		payload := new(PingQuery)
 		payload.ID, ok = addition["id"].(string)
 		if !ok {
+			emsg = "Invalid `id` field"
 			break
 		}
 		m.N.ID = []byte(payload.ID)
-		ret = payload
+		m.A = payload
 	case "find_node":
 		payload := new(FindNodeQuery)
 		payload.ID, ok = addition["id"].(string)
 		if !ok {
+			emsg = "Invalid `id` field"
 			break
 		}
 		payload.Target, ok = addition["target"].(string)
 		if !ok {
+			emsg = "Invalid `target` field"
 			break
 		}
 		m.N.ID = []byte(payload.ID)
-		ret = payload
+		m.A = payload
 	case "get_peers":
 		payload := new(GetPeersQuery)
 		payload.ID, ok = addition["id"].(string)
 		if !ok {
+			emsg = "Invalid `id` field"
 			break
 		}
 		payload.InfoHash, ok = addition["info_hash"].(string)
 		if !ok {
+			emsg = "Invalid `infohash` field"
 			break
 		}
 		m.N.ID = []byte(payload.ID)
-		ret = payload
+		m.A = payload
 	case "announce_peer":
 		payload := new(AnnouncePeerQuery)
 		payload.ID, ok = addition["id"].(string)
 		if !ok {
+			emsg = "Invalid `id` field"
 			break
 		}
 		payload.InfoHash, ok = addition["info_hash"].(string)
 		if !ok {
+			emsg = "Invalid `infohash` field"
 			break
 		}
 		payload.Port, ok = addition["port"].(int)
 		if !ok {
+			emsg = "Invalid `port` field"
 			break
 		}
 		payload.Token, ok = addition["token"].(string)
 		if !ok {
+			emsg = "Invalid `token` field"
 			break
 		}
 		var impliedPort int
@@ -366,14 +375,14 @@ func decodeQuery(q string, addition map[string]interface{}, m *Message) (interfa
 			payload.ImpliedPort = true
 		}
 		m.N.ID = []byte(payload.ID)
-		ret = payload
+		m.A = payload
 	default:
-		return nil, &DecodeError{"Unknown method: " + q}
+		return &DecodeError{"Unknown method: " + q}
 	}
 	if !ok {
-		return nil, &DecodeError{"Protocol error: " + q}
+		return &DecodeError{"Protocol error: " + q + ", detail: " + emsg}
 	}
-	return ret, nil
+	return nil
 }
 
 func decodeResponse(q string, addition map[string]interface{}, m *Message) (interface{}, error) {
@@ -488,7 +497,7 @@ func KRPCDecode(raw *RawData) (*Message, error) {
 		if !ok {
 			return nil, &DecodeError{"Protocol error: Empty query `a` field"}
 		}
-		m.A, err = decodeQuery(m.Q, addition, m)
+		err = decodeQuery(m.Q, addition, m)
 		if err != nil {
 			return nil, err
 		}

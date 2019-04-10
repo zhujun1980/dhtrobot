@@ -58,7 +58,7 @@ func (f *Finder) CheckTable() {
 		for i, b := range f.routing.buckets {
 			diff := now.Sub(b.lastUpdated)
 			if len(b.nodes) == 0 || diff.Minutes() >= BucketLastChangedTimeLimit {
-				c.Log.Infof("Begin refresh bucket %d [%x, %x)", i, b.min.Bytes(), b.max.Bytes())
+				c.Log.Infof("Begin refresh bucket #%d [%x, %x)", i, b.min.Bytes(), b.max.Bytes())
 				queriedNodes := make([]Node, len(f.bootstrap))
 				copy(queriedNodes, f.bootstrap)
 				for i := range b.nodes {

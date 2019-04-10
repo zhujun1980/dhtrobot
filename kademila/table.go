@@ -57,6 +57,7 @@ func (b *bucket) getInsertPosition(newnode *big.Int) int {
 }
 
 func (b *bucket) addNode(newnode *Node) {
+	b.lastUpdated = time.Now()
 	i := b.getInsertPosition(newnode.ID.Int())
 	if i < len(b.nodes) && b.nodes[i].ID.Int().Cmp(newnode.ID.Int()) == 0 {
 		b.nodes[i].LastSeen = time.Now()
@@ -72,7 +73,6 @@ func (b *bucket) addNode(newnode *Node) {
 	} else {
 		b.nodes = append(b.nodes, *newnode)
 	}
-	b.lastUpdated = time.Now()
 }
 
 func (b *bucket) split() *bucket {
@@ -118,8 +118,6 @@ type table struct {
 }
 
 func newTable(ctx context.Context) *table {
-	//c, _ := FromContext(ctx)
-
 	t := new(table)
 	t.ctx = ctx
 	t.lock = new(sync.Mutex)
@@ -128,7 +126,6 @@ func newTable(ctx context.Context) *table {
 	max := big.NewInt(1)
 	max.Lsh(max, MaxBitsLength)
 	t.buckets = append(t.buckets, newBucket(ctx, min, max))
-	//t.addNode(&c.Local)
 	return t
 }
 
