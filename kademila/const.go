@@ -19,11 +19,10 @@ var BOOTSTRAP = []string{
 const MAXSIZE = 2048
 
 const (
-	INIT          = iota
-	GOOD          = iota
-	QUESTIONABLE1 = iota //MISS once
-	QUESTIONABLE2 = iota //MISS twice
-	BAD           = iota
+	INIT         = iota
+	GOOD         = iota
+	QUESTIONABLE = iota
+	BAD          = iota
 )
 
 const (

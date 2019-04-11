@@ -93,13 +93,7 @@ func (k *Kademila) mainLoop(bootstrap bool) {
 }
 
 func (k *Kademila) transition() {
-	if k.finder.Working.Load() == true {
-		if k.finder.Status.Load() == Suspend {
-			k.finder.Status.Store(Finished)
-		}
-	} else {
-		k.finder.CheckTable()
-	}
+	k.finder.Check()
 	k.token.renewToken()
 }
 
@@ -110,6 +104,7 @@ func (k *Kademila) processQuery(m *Message) error {
 	c.Log.WithFields(logrus.Fields{
 		"m": m.String(),
 	}).Info("Request received:")
+
 	switch m.Q {
 	case "ping":
 		out = KRPCNewPingResponse(m.T, c.Local.ID)
@@ -123,6 +118,7 @@ func (k *Kademila) processQuery(m *Message) error {
 		out = KRPCNewGetPeersResponse(m.T, c.Local.ID, k.token.create(m.N.Addr.String()), nodes, []*Peer{})
 	case "announce_peer":
 	}
+
 	if validateClient(m.V) {
 		k.routing.addNode(&m.N)
 	}
@@ -137,12 +133,17 @@ func (k *Kademila) processResponse(m *Message) error {
 	c.Log.WithFields(logrus.Fields{
 		"m": m.String(),
 	}).Debug("Response received:")
+
 	switch m.Q {
 	case "ping":
 	case "find_node":
 		k.finder.Forward(m)
 	case "get_peers":
 	case "announce_peer":
+	}
+
+	if validateClient(m.V) {
+		k.routing.addNode(&m.N)
 	}
 	return nil
 }

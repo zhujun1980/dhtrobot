@@ -48,9 +48,21 @@ func (f *Finder) Forward(m *Message) {
 	}
 }
 
-func (f *Finder) CheckTable() {
-	f.Working.Store(true)
+func (f *Finder) Check() {
+	if f.Working.Load() == true {
+		if f.Status.Load() == Suspend {
+			f.Status.Store(Finished)
+		}
+	} else {
+		f.CheckTable()
+	}
+}
 
+func (f *Finder) CheckTable() {
+	if f.Working.Load() == true {
+		return
+	}
+	f.Working.Store(true)
 	go func() {
 		c, _ := FromContext(f.ctx)
 		now := time.Now()
@@ -68,14 +80,22 @@ func (f *Finder) CheckTable() {
 				f.FindNodes(b.generateRandomID(), queriedNodes)
 				return
 			} else {
+				for i := range b.nodes {
+					ndiff := now.Sub(b.nodes[i].LastSeen)
+					if ndiff.Minutes() >= BucketLastChangedTimeLimit {
+						b.nodes[i].Status = QUESTIONABLE
+					}
+				}
 			}
 		}
 	}()
 }
 
 func (f *Finder) Bootstrap(target NodeID) {
+	if f.Working.Load() == true {
+		return
+	}
 	f.Working.Store(true)
-
 	go func() {
 		defer f.Working.Store(false)
 		f.FindNodes(target, f.bootstrap)

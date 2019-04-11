@@ -62,6 +62,9 @@ func (b *bucket) addNode(newnode *Node) {
 	if i < len(b.nodes) && b.nodes[i].ID.Int().Cmp(newnode.ID.Int()) == 0 {
 		b.nodes[i].LastSeen = time.Now()
 		b.nodes[i].Status = GOOD
+		if b.nodes[i].Addr != newnode.Addr {
+			b.nodes[i].Addr = newnode.Addr
+		}
 		return
 	}
 	newnode.LastSeen = time.Now()
