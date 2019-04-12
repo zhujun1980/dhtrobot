@@ -117,6 +117,17 @@ func (k *Kademila) processQuery(m *Message) error {
 		nodes := k.routing.findNode(q.InfoHash)
 		out = KRPCNewGetPeersResponse(m.T, c.Local.ID, k.token.create(m.N.Addr.String()), nodes, []*Peer{})
 	case "announce_peer":
+		//save peer
+		q := m.A.(*AnnouncePeerQuery)
+		if !k.token.validate(q.Token, m.N.Addr.String()) {
+			out = KRPCNewError(m.T, "announce_peer", ProtocolError)
+			c.Log.WithFields(logrus.Fields{
+				"t":  q.Token,
+				"ip": m.N.Addr.String(),
+			}).Warnf("Invalid token:")
+		} else {
+			out = KRPCNewAnnouncePeerResponse(m.T, c.Local.ID)
+		}
 	}
 
 	if validateClient(m.V) {

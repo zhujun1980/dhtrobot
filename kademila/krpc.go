@@ -355,24 +355,27 @@ func decodeQuery(addition map[string]interface{}, m *Message) error {
 			emsg = "Invalid `infohash` field"
 			break
 		}
-		payload.Port, ok = addition["port"].(int)
-		if !ok {
-			emsg = "Invalid `port` field"
-			break
-		}
 		payload.Token, ok = addition["token"].(string)
 		if !ok {
 			emsg = "Invalid `token` field"
 			break
 		}
-		var impliedPort int
-		impliedPort, ok = addition["implied_port"].(int)
+		var impliedPort int64
+		impliedPort, ok = addition["implied_port"].(int64)
 		if !ok {
 			impliedPort = 0
 			ok = true
 		}
-		if impliedPort == 1 {
-			payload.ImpliedPort = true
+		payload.ImpliedPort = (impliedPort != 0)
+		if payload.ImpliedPort {
+			payload.Port = m.N.Port()
+		} else {
+			p64, ok := addition["port"].(int64)
+			if !ok {
+				emsg = "Invalid `port` field"
+				break
+			}
+			payload.Port = int(p64)
 		}
 		m.N.ID = []byte(payload.ID)
 		m.A = payload
@@ -540,14 +543,11 @@ func KRPCDecode(raw *RawData) (*Message, error) {
 		if len(decodeErr) != 2 {
 			return nil, &DecodeError{"Protocol error: Error field length would be 2, got " + strconv.Itoa(len(decodeErr))}
 		}
-		err.Code, ok = decodeErr[0].(int)
+		c64, ok := decodeErr[0].(int64)
 		if !ok {
-			c, ok := decodeErr[0].(int64)
-			if !ok {
-				return nil, &DecodeError{fmt.Sprintf("Protocol error: Invalid Error code type, dat = %v, %s, %s", decodeErr, reflect.TypeOf(decodeErr[0]), reflect.TypeOf(decodeErr[1]))}
-			}
-			err.Code = int(c)
+			return nil, &DecodeError{fmt.Sprintf("Protocol error: Invalid Error code type, dat = %v, %s, %s", decodeErr, reflect.TypeOf(decodeErr[0]), reflect.TypeOf(decodeErr[1]))}
 		}
+		err.Code = int(c64)
 		err.Desc, ok = decodeErr[1].(string)
 		if !ok {
 			return nil, &DecodeError{"Protocol error: Invalid Error description type"}
@@ -651,6 +651,17 @@ func KRPCNewAnnouncePeer(local NodeID, infoHash string, port int, token string, 
 	payload.Port = port
 	payload.Token = token
 	payload.ImpliedPort = impliedPort
+	m.A = payload
+	return m
+}
+
+func KRPCNewAnnouncePeerResponse(tid string, local NodeID) *Message {
+	m := new(Message)
+	m.T = tid
+	m.Y = "r"
+	m.Q = "announce_peer"
+	payload := new(AnnouncePeerResponse)
+	payload.ID = local.String()
 	m.A = payload
 	return m
 }
