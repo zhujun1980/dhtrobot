@@ -94,6 +94,10 @@ func (node Node) Port() int {
 	return node.Addr.(*net.UDPAddr).Port
 }
 
+func (node Node) SStatus() string {
+	return statusNames[node.Status]
+}
+
 func (node Node) String() string {
 	if node.Addr != nil {
 		return fmt.Sprintf("ID=%s, Addr=%s, Status=%d", node.ID.HexString(), node.Addr.String(), node.Status)

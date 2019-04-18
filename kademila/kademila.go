@@ -67,7 +67,6 @@ func (k *Kademila) mainLoop(bootstrap bool) {
 			k.processMessage(msg)
 
 		case <-time.After(time.Second):
-			//c.Log.Debug("Main Loop Timeout")
 		}
 		k.transition()
 	}
@@ -198,7 +197,6 @@ func (k *Kademila) outgoingLoop() {
 			}
 
 		case <-time.After(time.Second):
-			//c.Log.Debug("Outgoing Loop Timeout")
 		}
 	}
 }

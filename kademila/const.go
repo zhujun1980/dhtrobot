@@ -25,6 +25,10 @@ const (
 	BAD          = iota
 )
 
+var statusNames = []string{
+	"Init", "Good", "Questionable", "Bad",
+}
+
 const (
 	Running  = iota
 	Suspend  = iota

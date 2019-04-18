@@ -119,7 +119,7 @@ func (b *bucket) String() string {
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString(fmt.Sprintf("[%x, %x), ", b.min.Bytes(), b.max.Bytes()))
 	for i, n := range b.nodes {
-		buf.WriteString(fmt.Sprintf("<%d, ID=%s, Addr=%s, D=%d>", i, n.ID.HexString(), n.Addr.String(), Distance(n.ID, c.Local.ID)))
+		buf.WriteString(fmt.Sprintf("<%d, ID=%s, Addr=%s, S=%s, D=%d>", i, n.ID.HexString(), n.Addr.String(), n.SStatus(), Distance(n.ID, c.Local.ID)))
 		if i < b.len() {
 			buf.WriteString("; ")
 		}
@@ -163,6 +163,10 @@ func (t *table) addNode(newnode *Node) {
 
 	t.lock.Lock()
 	defer t.lock.Unlock()
+
+	if newnode.ID.String() == c.Local.ID.String() {
+		return
+	}
 
 	k := newnode.ID.Int()
 	idx := t.searchBucket(k)
