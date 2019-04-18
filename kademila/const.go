@@ -4,10 +4,10 @@ const APPNAME = "DHTRobot"
 
 const VERSION = "0.1.0"
 
-// K is the bucket's size
+// Bucket size
 const K int = 8
 
-// BOOTSTRAP is bootstrap node
+// Bootstrap nodes
 var BOOTSTRAP = []string{
 	"router.bittorrent.com:6881",
 	"dht.transmissionbt.com:6881",
@@ -31,17 +31,25 @@ const (
 	Finished = iota
 )
 
-const FindNodeTimeLimit = 120 // In seconds
+const RequestTimeout = 10 // seconds
+
+const PingNodeTimeLimit = 30 // seconds
+
+const FindNodeTimeLimit = 120 // seconds
 
 const MaxUnchangedCount = 5000
 
-const TokenTimeLimit = 300 // 5 minutes
+const TokenTimeLimit = 300 // seconds
 
-const NodeRefreshnessTimeLimit = 15
+const BucketLastChangedTimeLimit = 15 // minutes
 
-const BucketLastChangedTimeLimit = 15
+const NodeRefreshnessTimeLimit = 60 // seconds
 
 const MaxBitsLength = 160
+
+const FinderNum = 2
+
+const UndefinedWorker = -1
 
 var FilteredClients = map[string]bool{
 	"LT(0.17)": true,

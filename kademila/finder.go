@@ -9,105 +9,39 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type Finder struct {
-	Chan      chan *Message
-	ctx       context.Context
-	routing   *table
-	Working   atomic.Value
-	Status    atomic.Value
-	bootstrap []Node
+type finder struct {
+	Chan    chan *Message
+	ctx     context.Context
+	working atomic.Value
+	status  atomic.Value
+	idx     int
 }
 
-func NewFinder(routing *table, ctx context.Context) (*Finder, error) {
-	c, _ := FromContext(ctx)
-	f := new(Finder)
-	f.routing = routing
+func newFinder(ctx context.Context, idx int) *finder {
+	f := new(finder)
 	f.ctx = ctx
 	f.Chan = make(chan *Message)
-	for _, host := range BOOTSTRAP {
-		raddr, err := net.ResolveUDPAddr("udp", host)
-		if err != nil {
-			c.Log.WithFields(logrus.Fields{
-				"err": err,
-			}).Error("Resolve DNS error")
-			continue
-		}
-		f.bootstrap = append(f.bootstrap, Node{Addr: raddr})
-		c.Log.WithFields(logrus.Fields{
-			"Host": host,
-			"IP":   raddr.IP,
-			"Port": raddr.Port,
-		}).Info("Bootstrap from")
-	}
-	return f, nil
+	f.working.Store(false)
+	f.idx = idx
+	return f
 }
 
-func (f *Finder) Forward(m *Message) {
-	if f.Working.Load() == true && f.Status.Load() != Finished {
+func (f *finder) available() bool {
+	return f.working.Load() == false
+}
+
+func (f *finder) forward(m *Message) {
+	if f.working.Load() == true && f.status.Load() != Finished {
 		f.Chan <- m
 	}
 }
 
-func (f *Finder) Check() {
-	if f.Working.Load() == true {
-		if f.Status.Load() == Suspend {
-			f.Status.Store(Finished)
-		}
-	} else {
-		f.CheckTable()
-	}
-}
-
-func (f *Finder) CheckTable() {
-	if f.Working.Load() == true {
-		return
-	}
-	f.Working.Store(true)
-	go func() {
-		c, _ := FromContext(f.ctx)
-		now := time.Now()
-		defer f.Working.Store(false)
-		for i, b := range f.routing.buckets {
-			diff := now.Sub(b.lastUpdated)
-			if len(b.nodes) == 0 || diff.Minutes() >= BucketLastChangedTimeLimit {
-				c.Log.Infof("Begin refresh bucket #%d [%x, %x)", i, b.min.Bytes(), b.max.Bytes())
-				queriedNodes := make([]Node, len(f.bootstrap))
-				copy(queriedNodes, f.bootstrap)
-				for i := range b.nodes {
-					queriedNodes = append(queriedNodes, b.nodes[i])
-				}
-				b.nodes = make([]Node, 0, K)
-				f.FindNodes(b.generateRandomID(), queriedNodes)
-				return
-			} else {
-				for i := range b.nodes {
-					ndiff := now.Sub(b.nodes[i].LastSeen)
-					if ndiff.Minutes() >= BucketLastChangedTimeLimit {
-						b.nodes[i].Status = QUESTIONABLE
-					}
-				}
-			}
-		}
-	}()
-}
-
-func (f *Finder) Bootstrap(target NodeID) {
-	if f.Working.Load() == true {
-		return
-	}
-	f.Working.Store(true)
-	go func() {
-		defer f.Working.Store(false)
-		f.FindNodes(target, f.bootstrap)
-	}()
-}
-
-func (f *Finder) FindNodes(target NodeID, queriedNodes []Node) error {
+func (f *finder) findNodes(target NodeID, queriedNodes []Node) map[string]*Node {
 	c, _ := FromContext(f.ctx)
 	allnodes := make(map[string]*Node)
-	f.Status.Store(Running)
+	f.status.Store(Running)
 	for i := range queriedNodes {
-		m := KRPCNewFindNode(c.Local.ID, target)
+		m := KRPCNewFindNode(c.Local.ID, target, f.idx)
 		m.N = queriedNodes[i]
 		c.Outgoing <- m
 		if len(queriedNodes[i].ID) > 0 {
@@ -119,9 +53,9 @@ func (f *Finder) FindNodes(target NodeID, queriedNodes []Node) error {
 	begin := time.Now()
 	unchanged := 0
 
-	c.Log.Infof("FindNode: %s", target.HexString())
+	c.Log.Infof("FindNode(#%d): %s start", f.idx, target.HexString())
 	for cond {
-		if f.Status.Load() == Finished {
+		if f.status.Load() == Finished {
 			break
 		}
 		select {
@@ -133,10 +67,10 @@ func (f *Finder) FindNodes(target NodeID, queriedNodes []Node) error {
 			if !ok {
 				c.Log.WithFields(logrus.Fields{
 					"msg": msg,
-				}).Errorf("Incorrect msg, wants FindNode, got %s", msg.Q)
+				}).Errorf("FindNode(#%d): Incorrect msg, wants FindNodeResponse, got %s", f.idx, msg.Q)
 				break
 			}
-			c.Log.Debugf("Got %d new nodes, total nodes %d, distance %d, unchanged %d", len(response.Nodes), len(allnodes), minDistance, unchanged)
+			c.Log.Debugf("FindNode(#%d): Got %d new nodes, total nodes %d, distance %d, unchanged %d", f.idx, len(response.Nodes), len(allnodes), minDistance, unchanged)
 			unchanged++
 			node, ok := allnodes[response.ID]
 			if ok {
@@ -149,14 +83,14 @@ func (f *Finder) FindNodes(target NodeID, queriedNodes []Node) error {
 					c.Log.WithFields(logrus.Fields{
 						"prev": minDistance,
 						"new":  distance,
-					}).Debugf("Got closer node %s, current %s", node.ID.HexString(), target.HexString())
+					}).Debugf("FindNode(#%d): Got closer node %s, current %s", f.idx, node.ID.HexString(), target.HexString())
 					minDistance = distance
 					unchanged = 0
 				}
 			}
-			if f.Status.Load() == Running && (unchanged >= MaxUnchangedCount) {
-				f.Status.Store(Suspend)
-				c.Log.Infof("FindNode finished, exceeds max count %d", MaxUnchangedCount)
+			if f.status.Load() == Running && (unchanged >= MaxUnchangedCount) {
+				f.status.Store(Suspend)
+				c.Log.Infof("FindNode(#%d) stopped, exceeds max count %d", f.idx, MaxUnchangedCount)
 			} else {
 				for idx := range response.Nodes {
 					if response.Nodes[idx].Port() <= 0 || net.IP(response.Nodes[idx].IP()).IsUnspecified() {
@@ -165,7 +99,7 @@ func (f *Finder) FindNodes(target NodeID, queriedNodes []Node) error {
 					_, ok = allnodes[response.Nodes[idx].ID.String()]
 					if !ok {
 						allnodes[response.Nodes[idx].ID.String()] = &response.Nodes[idx]
-						m := KRPCNewFindNode(c.Local.ID, target)
+						m := KRPCNewFindNode(c.Local.ID, target, f.idx)
 						m.N = response.Nodes[idx]
 						c.Outgoing <- m
 					}
@@ -180,28 +114,86 @@ func (f *Finder) FindNodes(target NodeID, queriedNodes []Node) error {
 			}
 
 		case <-time.After(time.Second):
-			c.Log.Debug("Find node timeout")
 			now := time.Now()
 			diff := now.Sub(begin)
-			if f.Status.Load() == Running && diff.Seconds() >= FindNodeTimeLimit {
-				f.Status.Store(Suspend)
-				c.Log.Infof("FindNode timeout, exceeds %d seconds", FindNodeTimeLimit)
+			if f.status.Load() == Running && diff.Seconds() >= FindNodeTimeLimit {
+				f.status.Store(Suspend)
+				c.Log.Infof("FindNode(#%d) timeout, exceeds %d seconds", f.idx, FindNodeTimeLimit)
 			}
 
 		case <-f.ctx.Done():
-			c.Log.Error("FindNode canceled, ", f.ctx.Err())
+			c.Log.Errorf("FindNode(#%d) canceled, %s", f.idx, f.ctx.Err())
 			return nil
 		}
 	}
+	return allnodes
+}
 
-	good := 0
-	for _, v := range allnodes {
-		if v.Status == GOOD {
-			good++
-			f.routing.addNode(v)
+func (f *finder) pingNodes(queriedNodes []Node) []Node {
+	c, _ := FromContext(f.ctx)
+	var arrayIdx = make(map[string]int)
+	begin := time.Now()
+	f.status.Store(Running)
+	for i := range queriedNodes {
+		queriedNodes[i].LastSeen = begin
+		m := KRPCNewPing(c.Local.ID, f.idx)
+		m.N = queriedNodes[i]
+		c.Outgoing <- m
+		arrayIdx[queriedNodes[i].ID.String()] = i
+	}
+
+	cond := true
+	c.Log.Infof("PingNode(#%d) start, stale nodes %d", f.idx, len(queriedNodes))
+	for cond {
+		if f.status.Load() == Finished {
+			break
+		}
+		select {
+		case msg := <-f.Chan:
+			if msg.Y != "r" {
+				break
+			}
+			response, ok := msg.A.(*PingResponse)
+			if !ok {
+				c.Log.WithFields(logrus.Fields{
+					"msg": msg,
+				}).Errorf("PingNode(#%d): Incorrect msg, wants PingResponse, got %s", f.idx, msg.Q)
+				break
+			}
+			idx, ok := arrayIdx[response.ID]
+			if ok {
+				queriedNodes[idx].Status = GOOD
+			} else {
+				c.Log.Warnf("PingNode(#%d): ID not found %s", f.idx, response.ID)
+			}
+
+		case <-time.After(time.Second):
+			now := time.Now()
+			diff := now.Sub(begin)
+			if f.status.Load() == Running {
+				if diff.Seconds() >= PingNodeTimeLimit {
+					f.status.Store(Suspend)
+					c.Log.Debugf("PingNode(#%d) timeout, exceeds %d seconds", f.idx, PingNodeTimeLimit)
+				} else {
+					resend := 0
+					for i := range queriedNodes {
+						diff2 := now.Sub(queriedNodes[i].LastSeen)
+						if queriedNodes[i].Status != GOOD && diff2.Seconds() >= RequestTimeout {
+							queriedNodes[i].LastSeen = now
+							m := KRPCNewPing(c.Local.ID, f.idx)
+							m.N = queriedNodes[i]
+							c.Outgoing <- m
+							resend++
+						}
+					}
+					c.Log.Debugf("PingNode(#%d) resend %d", f.idx, resend)
+				}
+			}
+
+		case <-f.ctx.Done():
+			c.Log.Errorf("PingNode(#%d) canceled, %s", f.idx, f.ctx.Err())
+			return nil
 		}
 	}
-	c.Log.Info(f.routing)
-	c.Log.Infof("FindNode finished, got %d nodes, %d good nodes", len(allnodes), good)
-	return nil
+	return queriedNodes
 }

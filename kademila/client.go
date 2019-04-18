@@ -162,14 +162,14 @@ func send(ctx context.Context, conn *connection, req *Message, t string) (*Messa
 
 func ping(ctx context.Context, conn *connection) error {
 	c, _ := FromContext(ctx)
-	req := KRPCNewPing(c.Local.ID)
+	req := KRPCNewPing(c.Local.ID, UndefinedWorker)
 	_, err := send(ctx, conn, req, "5s")
 	return err
 }
 
 func findNode(ctx context.Context, conn *connection, target NodeID) error {
 	c, _ := FromContext(ctx)
-	req := KRPCNewFindNode(c.Local.ID, target)
+	req := KRPCNewFindNode(c.Local.ID, target, UndefinedWorker)
 	res, err := send(ctx, conn, req, "5s")
 	if err != nil {
 		return err
@@ -184,7 +184,7 @@ func findNode(ctx context.Context, conn *connection, target NodeID) error {
 
 func getPeers(ctx context.Context, conn *connection, infoHash NodeID) error {
 	c, _ := FromContext(ctx)
-	req := KRPCNewGetPeers(c.Local.ID, infoHash)
+	req := KRPCNewGetPeers(c.Local.ID, infoHash, UndefinedWorker)
 	res, err := send(ctx, conn, req, "5s")
 	if err != nil {
 		return err
@@ -373,13 +373,8 @@ func RunClient(ctx context.Context, master chan string, logger *logrus.Logger) {
 			}).Fatal("Compile regex failed")
 		}
 	}
-	c := new(NodeContext)
-	c.Log = logger
-	c.Master = master
-	c.Local.ID = GenerateID()
-	c.Writer = os.Stdout
-
-	clientCtx := NewContext(ctx, c)
+	clientCtx := newContext(ctx, master, logger, os.Stdout)
+	c, _ := FromContext(clientCtx)
 	io.WriteString(c.Writer, fmt.Sprintf("DHTRobot %s, Type 'help' show help page\n", VERSION))
 	io.WriteString(c.Writer, fmt.Sprintf("Local node ID: %s\n", c.Local.ID.HexString()))
 

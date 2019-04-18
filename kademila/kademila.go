@@ -3,6 +3,7 @@ package kademila
 import (
 	"context"
 	"net"
+	"os"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -12,7 +13,6 @@ type Kademila struct {
 	Chan    chan string
 	ctx     context.Context
 	routing *table
-	finder  *Finder
 	token   *TokenBuilder
 }
 
@@ -24,31 +24,13 @@ func Restore(master chan string, id NodeID, routing []byte) *Kademila {
 }
 
 func New(ctx context.Context, master chan string, logger *logrus.Logger) (*Kademila, error) {
-	var err error
-
 	k := new(Kademila)
-	c := new(NodeContext)
-	c.Log = logger
-	c.Master = master
-	c.Outgoing = make(chan *Message)
-	c.Incoming = make(chan RawData)
-	c.Conn, err = net.ListenPacket("udp", "")
-	if err != nil {
-		c.Log.Panic(err)
-	}
-	c.Local.ID = GenerateID()
-	c.Local.Addr = c.Conn.LocalAddr().(*net.UDPAddr)
-	c.Local.Status = GOOD
-
-	k.ctx = NewContext(ctx, c)
+	k.ctx = newContext(ctx, master, logger, os.Stdout)
 	k.Chan = make(chan string)
 	k.routing = newTable(k.ctx)
-	k.finder, err = NewFinder(k.routing, k.ctx)
-	if err != nil {
-		return nil, err
-	}
 	k.token = newTokenBuilder()
 
+	c, _ := FromContext(k.ctx)
 	c.Log.WithFields(logrus.Fields{
 		"ID":   c.Local.ID.HexString(),
 		"Addr": c.Local.Addr.String(),
@@ -65,7 +47,7 @@ func (k *Kademila) mainLoop(bootstrap bool) {
 	c, _ := FromContext(k.ctx)
 
 	if bootstrap {
-		k.finder.Bootstrap(c.Local.ID)
+		k.routing.bootstrap(c.Local.ID)
 	}
 	for {
 		select {
@@ -87,13 +69,12 @@ func (k *Kademila) mainLoop(bootstrap bool) {
 		case <-time.After(time.Second):
 			//c.Log.Debug("Main Loop Timeout")
 		}
-
 		k.transition()
 	}
 }
 
 func (k *Kademila) transition() {
-	k.finder.Check()
+	k.routing.check()
 	k.token.renewToken()
 }
 
@@ -117,7 +98,7 @@ func (k *Kademila) processQuery(m *Message) error {
 		nodes := k.routing.findNode(q.InfoHash)
 		out = KRPCNewGetPeersResponse(m.T, c.Local.ID, k.token.create(m.N.Addr.String()), nodes, []*Peer{})
 	case "announce_peer":
-		//save peer
+		//TODO save peer
 		q := m.A.(*AnnouncePeerQuery)
 		if !k.token.validate(q.Token, m.N.Addr.String()) {
 			out = KRPCNewError(m.T, "announce_peer", ProtocolError)
@@ -146,9 +127,8 @@ func (k *Kademila) processResponse(m *Message) error {
 	}).Debug("Response received:")
 
 	switch m.Q {
-	case "ping":
-	case "find_node":
-		k.finder.Forward(m)
+	case "ping", "find_node":
+		k.routing.forward(m)
 	case "get_peers":
 	case "announce_peer":
 	}

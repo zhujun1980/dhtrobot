@@ -76,6 +76,7 @@ type Message struct {
 	//Not all implementations include a "v" key so clients should not assume its presence.
 	V string
 	Q string
+	W int
 	A interface{}
 }
 
@@ -174,8 +175,8 @@ func (m *Message) String() string {
 		}
 	}
 	ver := formatVersion(m.V)
-	return fmt.Sprintf("Message T=%x, Y=%s, V=%s, Q=%s, %s, SendNode(%s)",
-		m.T, m.Y, ver, m.Q, additional, m.N)
+	return fmt.Sprintf("Message T=%x, Y=%s, V=%s, Q=%s, W=%d, %s, SendNode(%s)",
+		m.T, m.Y, ver, m.Q, m.W, additional, m.N)
 }
 
 type DecodeError struct {
@@ -207,7 +208,13 @@ var ErrorDefinitions = map[int]string{
 }
 
 var lock = new(sync.Mutex)
-var penddingRequests = make(map[string]string)
+
+type queryMetadata struct {
+	q string
+	w int
+}
+
+var penddingRequests = make(map[string]queryMetadata)
 var transactionID uint64
 
 func genTID() string {
@@ -484,6 +491,7 @@ func KRPCDecode(raw *RawData) (*Message, error) {
 
 	m := new(Message)
 	m.N.Addr = raw.Addr
+	m.W = UndefinedWorker
 	m.T, ok = val["t"].(string)
 	if !ok {
 		return nil, &DecodeError{"Protocol error: Empty `t` field"}
@@ -514,10 +522,12 @@ func KRPCDecode(raw *RawData) (*Message, error) {
 	case "r":
 		lock.Lock()
 		defer lock.Unlock()
-		m.Q, ok = penddingRequests[m.T]
+		qm, ok := penddingRequests[m.T]
 		if !ok {
 			return nil, &DecodeError{"Unknown request"}
 		}
+		m.Q = qm.q
+		m.W = qm.w
 		var addition map[string]interface{}
 		addition, ok = val["r"].(map[string]interface{})
 		if !ok {
@@ -530,10 +540,12 @@ func KRPCDecode(raw *RawData) (*Message, error) {
 	case "e":
 		lock.Lock()
 		defer lock.Unlock()
-		m.Q, ok = penddingRequests[m.T]
+		qm, ok := penddingRequests[m.T]
 		if !ok {
 			return nil, &DecodeError{"Unknown request"}
 		}
+		m.Q = qm.q
+		m.W = qm.w
 		err := new(Err)
 		var decodeErr []interface{}
 		decodeErr, ok = val["e"].([]interface{})
@@ -565,6 +577,7 @@ func KRPCNewError(tid string, q string, code int) *Message {
 	m.T = tid
 	m.Y = "e"
 	m.Q = q
+	m.W = UndefinedWorker
 	payload := new(Err)
 	payload.Code = code
 	payload.Desc = ErrorDefinitions[code]
@@ -572,10 +585,11 @@ func KRPCNewError(tid string, q string, code int) *Message {
 	return m
 }
 
-func KRPCNewPing(local NodeID) *Message {
+func KRPCNewPing(local NodeID, worker int) *Message {
 	m := new(Message)
 	m.Y = "q"
 	m.Q = "ping"
+	m.W = worker
 	payload := new(PingQuery)
 	payload.ID = local.String()
 	m.A = payload
@@ -587,16 +601,18 @@ func KRPCNewPingResponse(tid string, local NodeID) *Message {
 	m.T = tid
 	m.Y = "r"
 	m.Q = "ping"
+	m.W = UndefinedWorker
 	payload := new(PingResponse)
 	payload.ID = local.String()
 	m.A = payload
 	return m
 }
 
-func KRPCNewFindNode(local NodeID, target NodeID) *Message {
+func KRPCNewFindNode(local NodeID, target NodeID, worker int) *Message {
 	m := new(Message)
 	m.Y = "q"
 	m.Q = "find_node"
+	m.W = worker
 	payload := new(FindNodeQuery)
 	payload.ID = local.String()
 	payload.Target = target.String()
@@ -609,6 +625,7 @@ func KRPCNewFindNodeResponse(tid string, local NodeID, nodes []Node) *Message {
 	m.T = tid
 	m.Y = "r"
 	m.Q = "find_node"
+	m.W = UndefinedWorker
 	payload := new(FindNodeResponse)
 	payload.ID = local.String()
 	payload.Nodes = nodes
@@ -616,10 +633,11 @@ func KRPCNewFindNodeResponse(tid string, local NodeID, nodes []Node) *Message {
 	return m
 }
 
-func KRPCNewGetPeers(local NodeID, infoHash NodeID) *Message {
+func KRPCNewGetPeers(local NodeID, infoHash NodeID, worker int) *Message {
 	m := new(Message)
 	m.Y = "q"
 	m.Q = "get_peers"
+	m.W = worker
 	payload := new(GetPeersQuery)
 	payload.ID = local.String()
 	payload.InfoHash = infoHash.String()
@@ -632,6 +650,7 @@ func KRPCNewGetPeersResponse(tid string, local NodeID, token string, nodes []Nod
 	m.T = tid
 	m.Y = "r"
 	m.Q = "get_peers"
+	m.W = UndefinedWorker
 	payload := new(GetPeersResponse)
 	payload.ID = local.String()
 	payload.Nodes = nodes
@@ -641,10 +660,11 @@ func KRPCNewGetPeersResponse(tid string, local NodeID, token string, nodes []Nod
 	return m
 }
 
-func KRPCNewAnnouncePeer(local NodeID, infoHash string, port int, token string, impliedPort bool) *Message {
+func KRPCNewAnnouncePeer(local NodeID, infoHash string, port int, token string, impliedPort bool, worker int) *Message {
 	m := new(Message)
 	m.Y = "q"
 	m.Q = "announce_peer"
+	m.W = worker
 	payload := new(AnnouncePeerQuery)
 	payload.ID = local.String()
 	payload.InfoHash = infoHash
@@ -660,6 +680,7 @@ func KRPCNewAnnouncePeerResponse(tid string, local NodeID) *Message {
 	m.T = tid
 	m.Y = "r"
 	m.Q = "announce_peer"
+	m.W = UndefinedWorker
 	payload := new(AnnouncePeerResponse)
 	payload.ID = local.String()
 	m.A = payload
@@ -691,9 +712,10 @@ func KRPCEncode(m *Message) (string, error) {
 		if err == nil {
 			lock.Lock()
 			defer lock.Unlock()
-			penddingRequests[tid] = m.Q
+			penddingRequests[tid] = queryMetadata{m.Q, m.W}
 		}
 		m.T = tid
+
 	case "r":
 		switch m.Q {
 		case "ping":
