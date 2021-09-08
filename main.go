@@ -16,16 +16,18 @@ func initLogger() *logrus.Logger {
 		FullTimestamp: true,
 	}
 	log.Out = os.Stderr
-	log.Level = logrus.InfoLevel
+	log.Level = logrus.Level(logLevel)
 	return log
 }
 
 var (
 	flagClient bool
+	logLevel   int
 )
 
 func parseCommandLine() {
 	flag.BoolVar(&flagClient, "client", false, "Run program in client mode")
+	flag.IntVar(&logLevel, "loglevel", int(logrus.InfoLevel), "Log level[Info, Debug]")
 	flag.Parse()
 }
 
